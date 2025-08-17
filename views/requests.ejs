@@ -79,7 +79,7 @@
       });
 
       // Ensure active item is visible
-      const active = document.querySelector('[data-req-item].!bg-slate-50');
+      const active = document.querySelector('[data-req-item].bg-slate-50');
       if(active){
         active.scrollIntoView({ block:'nearest' });
       }
@@ -256,7 +256,7 @@
     </div>
   </main>
 </body>
-<script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
 <script>
   (function(){
     try {
@@ -282,7 +282,7 @@
 
       function insertRequest(request){
         try{
-          const container = document.querySelector('aside .max-h-[70vh]');
+          const container = document.querySelector('aside .overflow-auto.divide-y');
           if(!container) return;
 
           // If 'No requests yet.' exists, remove it

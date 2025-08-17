@@ -39,6 +39,11 @@ mongoose.connect(MONGODB_URI)
 // Middleware
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Serve Socket.IO client library locally
+app.get('/socket.io/socket.io.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'node_modules/socket.io/client-dist/socket.io.min.js'));
+});
+
 // Raw body middleware for webhook endpoints only
 app.use('/webhook', express.raw({ type: '*/*', limit: '10mb' }));
 

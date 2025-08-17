@@ -101,10 +101,10 @@
           <div class="md:col-span-4">
             <label class="text-xs font-medium text-slate-600 mb-1 block">Label</label>
             <div class="flex items-center gap-2 bg-white border border-slate-300 rounded-lg px-2 py-2 min-h-10">
-              <input name="label" type="text" placeholder="e.g. Payment API, Internal Hook"
+              <input id="label_input" name="label" type="text" placeholder="e.g. Payment API"
                      class="flex-1 bg-transparent text-sm text-slate-700 placeholder-slate-400 focus:outline-none" />
             </div>
-            <p class="mt-1 text-[11px] text-slate-500">Optional. Custom name for the webhook (defaults to "URL X").</p>
+            <p class="mt-1 text-[11px] text-slate-500">Optional. Only letters, numbers, space, underscore and hyphen allowed.</p>
           </div>
         </div>
 
@@ -435,9 +435,48 @@
                 return false;
               }
             }
+              // Ensure label contains only a single value (split on comma)
+              const labelEl = document.getElementById('label_input');
+              if(labelEl){
+                const raw = labelEl.value || '';
+                if(raw.includes(',')){
+                  // keep the first non-empty segment
+                  const first = raw.split(',').map(s=>s.trim()).filter(Boolean)[0] || '';
+                  labelEl.value = first;
+                  showToast('Multiple labels not allowed — keeping first label');
+                }
+              }
           }catch(_){ }
         });
       }
+        // Restrict label input to alphanumeric, space, underscore and hyphen
+        const labelInput = document.getElementById('label_input');
+        if(labelInput){
+          const allowedRe = /^[A-Za-z0-9 _-]$/;
+          labelInput.addEventListener('keydown', function(e){
+            // Allow control keys: backspace, delete, arrows, tab, enter
+            if(e.ctrlKey || e.metaKey || e.key.length > 1) return;
+            if(!allowedRe.test(e.key)){
+              e.preventDefault();
+              showToast('Only letters, numbers, space, underscore and hyphen allowed');
+            }
+          });
+          // Strip invalid chars on paste and insert only cleaned text (first valid segment)
+          labelInput.addEventListener('paste', function(e){
+            const paste = (e.clipboardData || window.clipboardData).getData('text') || '';
+            if(!paste) return;
+            e.preventDefault();
+            // Keep only allowed characters and collapse multiple invalid separators
+            const cleaned = paste.split('').map(ch => allowedRe.test(ch) ? ch : '').join('');
+            // insert cleaned text at cursor
+            const start = labelInput.selectionStart || 0;
+            const end = labelInput.selectionEnd || 0;
+            const before = labelInput.value.slice(0, start);
+            const after = labelInput.value.slice(end);
+            labelInput.value = before + cleaned + after;
+            showToast('Pasted text cleaned to allowed characters');
+          });
+        }
     });
   </script>
 </body>

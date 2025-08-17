@@ -208,8 +208,28 @@ app.post('/webhooks', async (req, res) => {
       tries++;
     }
     
-    // Use provided label or generate default
-    const webhookLabel = (label && label.trim() !== '') ? label.trim() : getNextLabel(webhooks);
+    // Use provided label or generate default. If multiple comma-separated labels provided,
+    // keep only the first one to enforce a single label server-side as a fallback.
+    // Server-side sanitization: allow only letters, numbers, space, underscore and hyphen.
+    // Collapse runs of spaces to a single space. If input contains separators (like commas),
+    // we take the first meaningful segment after stripping disallowed characters.
+    function sanitizeLabelInput(rawLabel){
+      if(!rawLabel || typeof rawLabel !== 'string') return '';
+      // Replace disallowed characters with a space so segments separated by invalid chars split cleanly
+      const replaced = rawLabel.replace(/[^A-Za-z0-9 _-]/g, ' ');
+      // Collapse multiple spaces
+      const collapsed = replaced.replace(/\s+/g, ' ').trim();
+      return collapsed;
+    }
+
+    let webhookLabel = getNextLabel(webhooks);
+    if (label && label.trim() !== '') {
+      const cleaned = sanitizeLabelInput(label.trim());
+      if (cleaned !== '') {
+        // If cleaned contains spaces (was multi-part), keep the first token as the primary label
+        webhookLabel = cleaned.split(' ').filter(Boolean)[0] || cleaned;
+      }
+    }
     
     // Validate status
     let validStatus = parseInt(status) || 200;

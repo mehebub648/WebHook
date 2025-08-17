@@ -11,13 +11,21 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/webhook-app';
 
+// In-memory storage fallback
+let mongoConnected = false;
+let inMemoryWebhooks = [];
+let inMemoryRequests = [];
+
 // Connect to MongoDB
 mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
+  .then(() => {
+    console.log('Connected to MongoDB');
+    mongoConnected = true;
+  })
   .catch(err => {
     console.warn('MongoDB connection failed:', err.message);
-    console.warn('Note: Install and start MongoDB for data persistence');
-    console.warn('For now, the app will run with limited functionality');
+    console.warn('Note: Using in-memory storage for testing. Data will not persist.');
+    mongoConnected = false;
   });
 
 // Middleware
@@ -49,38 +57,116 @@ function getNextLabel(existingWebhooks) {
   return `URL ${existingWebhooks.length + 1}`;
 }
 
+// In-memory storage helpers
+async function findWebhooks() {
+  if (mongoConnected) {
+    return await Webhook.find().sort({ created_at: -1 });
+  } else {
+    return inMemoryWebhooks.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  }
+}
+
+async function findWebhookById(id) {
+  if (mongoConnected) {
+    return await Webhook.findOne({ id });
+  } else {
+    return inMemoryWebhooks.find(w => w.id === id);
+  }
+}
+
+async function saveWebhook(webhookData) {
+  if (mongoConnected) {
+    const webhook = new Webhook(webhookData);
+    return await webhook.save();
+  } else {
+    const webhook = { ...webhookData, created_at: new Date() };
+    inMemoryWebhooks.push(webhook);
+    return webhook;
+  }
+}
+
+async function deleteWebhook(id) {
+  if (mongoConnected) {
+    await Webhook.deleteOne({ id });
+  } else {
+    inMemoryWebhooks = inMemoryWebhooks.filter(w => w.id !== id);
+  }
+}
+
+async function findRequests(webhookId) {
+  if (mongoConnected) {
+    return await Request.find({ webhook_id: webhookId }).sort({ time: -1 }).limit(100);
+  } else {
+    return inMemoryRequests
+      .filter(r => r.webhook_id === webhookId)
+      .sort((a, b) => new Date(b.time) - new Date(a.time))
+      .slice(0, 100);
+  }
+}
+
+async function countRequests(webhookId) {
+  if (mongoConnected) {
+    return await Request.countDocuments({ webhook_id: webhookId });
+  } else {
+    return inMemoryRequests.filter(r => r.webhook_id === webhookId).length;
+  }
+}
+
+async function saveRequest(requestData) {
+  if (mongoConnected) {
+    const request = new Request(requestData);
+    return await request.save();
+  } else {
+    const request = { ...requestData, _id: uuidv4() };
+    inMemoryRequests.push(request);
+    return request;
+  }
+}
+
+async function updateRequest(rid, updateData) {
+  if (mongoConnected) {
+    return await Request.updateOne({ rid }, updateData);
+  } else {
+    const index = inMemoryRequests.findIndex(r => r.rid === rid);
+    if (index !== -1) {
+      inMemoryRequests[index] = { ...inMemoryRequests[index], ...updateData };
+    }
+  }
+}
+
+async function deleteRequests(webhookId) {
+  if (mongoConnected) {
+    await Request.deleteMany({ webhook_id: webhookId });
+  } else {
+    inMemoryRequests = inMemoryRequests.filter(r => r.webhook_id !== webhookId);
+  }
+}
+
 // Routes
 
 // Main dashboard
 app.get('/', async (req, res) => {
   try {
-    let webhooks = [];
-    let webhooksWithCounts = [];
+    const webhooks = await findWebhooks();
     
-    try {
-      webhooks = await Webhook.find().sort({ created_at: -1 });
-      
-      // Get request counts for each webhook
-      webhooksWithCounts = await Promise.all(
-        webhooks.map(async (webhook) => {
-          try {
-            const count = await Request.countDocuments({ webhook_id: webhook.id });
-            return {
-              ...webhook.toObject(),
-              request_count: count
-            };
-          } catch (dbError) {
-            console.warn('Failed to get request count for webhook:', webhook.id, dbError.message);
-            return {
-              ...webhook.toObject(),
-              request_count: 0
-            };
-          }
-        })
-      );
-    } catch (dbError) {
-      console.warn('Database not available, using empty webhooks list:', dbError.message);
-    }
+    // Get request counts for each webhook
+    const webhooksWithCounts = await Promise.all(
+      webhooks.map(async (webhook) => {
+        try {
+          const count = await countRequests(webhook.id);
+          return {
+            ...webhook,
+            request_count: count
+          };
+        } catch (error) {
+          console.warn('Failed to get request count for webhook:', webhook.id, error.message);
+          return {
+            ...webhook,
+            request_count: 0
+          };
+        }
+      })
+    );
 
     res.render('index', { 
       webhooks: webhooksWithCounts,
@@ -97,26 +183,14 @@ app.post('/webhooks', async (req, res) => {
   try {
     const { status, content_type, destination, custom_content_type } = req.body;
     
-    let webhooks = [];
-    try {
-      webhooks = await Webhook.find();
-    } catch (dbError) {
-      console.warn('Database not available for webhook creation:', dbError.message);
-      return res.status(503).send('Database not available. Please ensure MongoDB is running.');
-    }
-    
+    const webhooks = await findWebhooks();
     let id = generateId();
     
     // Ensure unique ID
     let tries = 0;
     while (tries < 5) {
-      try {
-        const exists = await Webhook.findOne({ id });
-        if (!exists) break;
-      } catch (dbError) {
-        console.warn('Database error checking for existing ID:', dbError.message);
-        break; // Continue with this ID if we can't check
-      }
+      const exists = await findWebhookById(id);
+      if (!exists) break;
       id = generateId();
       tries++;
     }
@@ -163,21 +237,16 @@ app.post('/webhooks', async (req, res) => {
       }
     }
     
-    const webhook = new Webhook({
+    const webhookData = {
       id,
       label,
       status: validStatus,
       content_type: contentType,
       destination: validDestination
-    });
+    };
     
-    try {
-      await webhook.save();
-      res.redirect('/');
-    } catch (dbError) {
-      console.error('Failed to save webhook:', dbError.message);
-      res.status(503).send('Database not available. Please ensure MongoDB is running.');
-    }
+    await saveWebhook(webhookData);
+    res.redirect('/');
   } catch (error) {
     console.error('Error creating webhook:', error);
     res.status(500).send('Internal Server Error');
@@ -192,8 +261,8 @@ app.delete('/webhooks/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid webhook ID' });
     }
     
-    await Webhook.deleteOne({ id });
-    await Request.deleteMany({ webhook_id: id });
+    await deleteWebhook(id);
+    await deleteRequests(id);
     
     res.json({ success: true });
   } catch (error) {
@@ -213,7 +282,7 @@ app.all('/webhook/:id', async (req, res) => {
     // Get raw body (should be available as Buffer from express.raw middleware)
     const rawBody = req.body ? req.body.toString() : '';
     
-    const webhook = await Webhook.findOne({ id });
+    const webhook = await findWebhookById(id);
     const status = webhook ? webhook.status : 200;
     const contentType = webhook ? webhook.content_type : 'text/html';
     const destination = webhook ? webhook.destination : '';
@@ -236,10 +305,9 @@ app.all('/webhook/:id', async (req, res) => {
     
     // Save request to database
     try {
-      const request = new Request(requestEntry);
-      await request.save();
-    } catch (dbError) {
-      console.warn('Failed to save request to database:', dbError.message);
+      await saveRequest(requestEntry);
+    } catch (error) {
+      console.warn('Failed to save request:', error.message);
     }
     
     // If destination is configured, proxy the request
@@ -291,15 +359,12 @@ app.all('/webhook/:id', async (req, res) => {
         
         // Update request with proxied status
         try {
-          await Request.updateOne(
-            { rid: requestEntry.rid },
-            { 
-              proxied_status: response.status,
-              response_status: response.status
-            }
-          );
-        } catch (dbError) {
-          console.warn('Failed to update request in database:', dbError.message);
+          await updateRequest(requestEntry.rid, {
+            proxied_status: response.status,
+            response_status: response.status
+          });
+        } catch (error) {
+          console.warn('Failed to update request:', error.message);
         }
         
       } catch (proxyError) {
@@ -307,15 +372,12 @@ app.all('/webhook/:id', async (req, res) => {
         
         // Update request with proxy error
         try {
-          await Request.updateOne(
-            { rid: requestEntry.rid },
-            { 
-              proxy_error: proxyError.message,
-              response_status: 502
-            }
-          );
-        } catch (dbError) {
-          console.warn('Failed to update request in database:', dbError.message);
+          await updateRequest(requestEntry.rid, {
+            proxy_error: proxyError.message,
+            response_status: 502
+          });
+        } catch (error) {
+          console.warn('Failed to update request:', error.message);
         }
         
         res.status(502)
@@ -352,9 +414,7 @@ app.get('/request/:id', async (req, res) => {
     const id = sanitizeId(req.params.id) || 'default';
     const rid = req.query.rid;
     
-    const requests = await Request.find({ webhook_id: id })
-      .sort({ time: -1 })
-      .limit(100);
+    const requests = await findRequests(id);
     
     // Assign request IDs for selection
     requests.forEach((request, index) => {
@@ -391,8 +451,8 @@ app.post('/webhooks/delete', async (req, res) => {
       return res.status(400).send('Invalid webhook ID');
     }
     
-    await Webhook.deleteOne({ id });
-    await Request.deleteMany({ webhook_id: id });
+    await deleteWebhook(id);
+    await deleteRequests(id);
     
     res.redirect('/');
   } catch (error) {

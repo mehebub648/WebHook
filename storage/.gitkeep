@@ -1,0 +1,1 @@
+# If mongoDB is not reachable, this folder will be used to keep a json file for each url, as alternative fallback database. 

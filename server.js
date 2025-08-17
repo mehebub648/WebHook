@@ -19,10 +19,49 @@ const server = http.createServer(app);
 let io;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/webhook-app';
 
-// In-memory storage fallback
+// In-memory storage fallback (deprecated) — prefer file-based JSON storage when MongoDB is unreachable
 let mongoConnected = false;
-let inMemoryWebhooks = [];
-let inMemoryRequests = [];
+
+const fs = require('fs').promises;
+const storageDir = path.join(__dirname, 'storage');
+
+async function ensureStorageDir() {
+  try {
+    await fs.mkdir(storageDir, { recursive: true });
+  } catch (e) {
+    console.warn('Failed to ensure storage directory:', e && e.message);
+  }
+}
+
+function webhookFilePath(id) {
+  return path.join(storageDir, `${id}.json`);
+}
+
+async function readWebhookFile(id) {
+  try {
+    const raw = await fs.readFile(webhookFilePath(id), 'utf8');
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function writeWebhookFile(id, data) {
+  try {
+    await fs.writeFile(webhookFilePath(id), JSON.stringify(data, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('Failed to write webhook file', id, e && e.message);
+  }
+}
+
+async function listWebhookFiles() {
+  try {
+    const files = await fs.readdir(storageDir);
+    return files.filter(f => f.endsWith('.json'));
+  } catch (e) {
+    return [];
+  }
+}
 
 // Connect to MongoDB
 mongoose.connect(MONGODB_URI)
@@ -32,12 +71,19 @@ mongoose.connect(MONGODB_URI)
   })
   .catch(err => {
     console.warn('MongoDB connection failed:', err.message);
-    console.warn('Note: Using in-memory storage for testing. Data will not persist.');
+  console.warn('Note: Using JSON file storage under storage/ for persistence.');
     mongoConnected = false;
+  // Ensure storage dir exists for file fallback
+  ensureStorageDir();
   });
 
 // Middleware
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve Socket.IO client library locally
+app.get('/socket.io/socket.io.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'node_modules/socket.io/client-dist/socket.io.min.js'));
+});
 
 // Raw body middleware for webhook endpoints only
 app.use('/webhook', express.raw({ type: '*/*', limit: '10mb' }));
@@ -70,7 +116,16 @@ async function findWebhooks() {
   if (mongoConnected) {
     return await Webhook.find().sort({ created_at: -1 });
   } else {
-    return inMemoryWebhooks.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const files = await listWebhookFiles();
+    const webhooks = [];
+    for (const f of files) {
+      try {
+        const raw = await fs.readFile(path.join(storageDir, f), 'utf8');
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.webhook) webhooks.push(parsed.webhook);
+      } catch (e) { /* ignore corrupted file */ }
+    }
+    return webhooks.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   }
 }
 
@@ -78,7 +133,8 @@ async function findWebhookById(id) {
   if (mongoConnected) {
     return await Webhook.findOne({ id });
   } else {
-    return inMemoryWebhooks.find(w => w.id === id);
+  const parsed = await readWebhookFile(id);
+  return parsed && parsed.webhook ? parsed.webhook : null;
   }
 }
 
@@ -87,9 +143,12 @@ async function saveWebhook(webhookData) {
     const webhook = new Webhook(webhookData);
     return await webhook.save();
   } else {
-    const webhook = { ...webhookData, created_at: new Date() };
-    inMemoryWebhooks.push(webhook);
-    return webhook;
+  const webhook = { ...webhookData };
+  if (!webhook.created_at) webhook.created_at = new Date().toISOString();
+  const record = { webhook, requests: [] };
+  await ensureStorageDir();
+  await writeWebhookFile(webhook.id, record);
+  return webhook;
   }
 }
 
@@ -97,7 +156,9 @@ async function deleteWebhook(id) {
   if (mongoConnected) {
     await Webhook.deleteOne({ id });
   } else {
-    inMemoryWebhooks = inMemoryWebhooks.filter(w => w.id !== id);
+    try {
+      await fs.unlink(webhookFilePath(id));
+    } catch (e) { /* ignore if not exists */ }
   }
 }
 
@@ -105,8 +166,10 @@ async function findRequests(webhookId) {
   if (mongoConnected) {
     return await Request.find({ webhook_id: webhookId }).sort({ time: -1 }).limit(100);
   } else {
-    return inMemoryRequests
-      .filter(r => r.webhook_id === webhookId)
+    const parsed = await readWebhookFile(webhookId);
+    const requests = (parsed && Array.isArray(parsed.requests)) ? parsed.requests : [];
+    return requests
+      .slice() // copy
       .sort((a, b) => new Date(b.time) - new Date(a.time))
       .slice(0, 100);
   }
@@ -116,7 +179,9 @@ async function countRequests(webhookId) {
   if (mongoConnected) {
     return await Request.countDocuments({ webhook_id: webhookId });
   } else {
-    return inMemoryRequests.filter(r => r.webhook_id === webhookId).length;
+  const parsed = await readWebhookFile(webhookId);
+  const requests = (parsed && Array.isArray(parsed.requests)) ? parsed.requests : [];
+  return requests.length;
   }
 }
 
@@ -125,8 +190,34 @@ async function saveRequest(requestData) {
     const request = new Request(requestData);
     return await request.save();
   } else {
-    const request = { ...requestData, _id: uuidv4() };
-    inMemoryRequests.push(request);
+    const request = { ...requestData };
+    // Normalize time to ISO string for JSON storage
+    if (request.time && request.time.toISOString) request.time = request.time.toISOString();
+    else if (!request.time) request.time = new Date().toISOString();
+
+    await ensureStorageDir();
+    const parsed = await readWebhookFile(request.webhook_id);
+    if (!parsed) {
+      // Create placeholder webhook record if missing
+      const placeholder = {
+        webhook: {
+          id: request.webhook_id,
+          label: `URL ${request.webhook_id}`,
+          status: 200,
+          content_type: 'text/html',
+          destination: '',
+          tags: [],
+          created_at: new Date().toISOString()
+        },
+        requests: [request]
+      };
+      await writeWebhookFile(request.webhook_id, placeholder);
+      return request;
+    }
+
+    parsed.requests = parsed.requests || [];
+    parsed.requests.push(request);
+    await writeWebhookFile(request.webhook_id, parsed);
     return request;
   }
 }
@@ -135,9 +226,21 @@ async function updateRequest(rid, updateData) {
   if (mongoConnected) {
     return await Request.updateOne({ rid }, updateData);
   } else {
-    const index = inMemoryRequests.findIndex(r => r.rid === rid);
-    if (index !== -1) {
-      inMemoryRequests[index] = { ...inMemoryRequests[index], ...updateData };
+    // Find request across all webhook files and update in-place
+    const files = await listWebhookFiles();
+    for (const f of files) {
+      try {
+        const full = path.join(storageDir, f);
+        const raw = await fs.readFile(full, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (!parsed || !Array.isArray(parsed.requests)) continue;
+        const idx = parsed.requests.findIndex(r => r.rid === rid);
+        if (idx !== -1) {
+          parsed.requests[idx] = { ...parsed.requests[idx], ...updateData };
+          await fs.writeFile(full, JSON.stringify(parsed, null, 2), 'utf8');
+          return;
+        }
+      } catch (e) { /* ignore and continue */ }
     }
   }
 }
@@ -146,7 +249,11 @@ async function deleteRequests(webhookId) {
   if (mongoConnected) {
     await Request.deleteMany({ webhook_id: webhookId });
   } else {
-    inMemoryRequests = inMemoryRequests.filter(r => r.webhook_id !== webhookId);
+    const parsed = await readWebhookFile(webhookId);
+    if (parsed) {
+      parsed.requests = [];
+      await writeWebhookFile(webhookId, parsed);
+    }
   }
 }
 
@@ -189,7 +296,7 @@ app.get('/', async (req, res) => {
 // Create webhook
 app.post('/webhooks', async (req, res) => {
   try {
-    const { status, content_type, destination, custom_content_type, tags } = req.body;
+    const { status, content_type, destination, custom_content_type, label } = req.body;
     
     const webhooks = await findWebhooks();
     let id = generateId();
@@ -203,7 +310,28 @@ app.post('/webhooks', async (req, res) => {
       tries++;
     }
     
-    const label = getNextLabel(webhooks);
+    // Use provided label or generate default. If multiple comma-separated labels provided,
+    // keep only the first one to enforce a single label server-side as a fallback.
+    // Server-side sanitization: allow only letters, numbers, space, underscore and hyphen.
+    // Collapse runs of spaces to a single space. If input contains separators (like commas),
+    // we take the first meaningful segment after stripping disallowed characters.
+    function sanitizeLabelInput(rawLabel){
+      if(!rawLabel || typeof rawLabel !== 'string') return '';
+      // Replace disallowed characters with a space so segments separated by invalid chars split cleanly
+      const replaced = rawLabel.replace(/[^A-Za-z0-9 _-]/g, ' ');
+      // Collapse multiple spaces
+      const collapsed = replaced.replace(/\s+/g, ' ').trim();
+      return collapsed;
+    }
+
+    let webhookLabel = getNextLabel(webhooks);
+    if (label && label.trim() !== '') {
+      const cleaned = sanitizeLabelInput(label.trim());
+      if (cleaned !== '') {
+        // If cleaned contains spaces (was multi-part), keep the first token as the primary label
+        webhookLabel = cleaned.split(' ').filter(Boolean)[0] || cleaned;
+      }
+    }
     
     // Validate status
     let validStatus = parseInt(status) || 200;
@@ -247,15 +375,11 @@ app.post('/webhooks', async (req, res) => {
     
     const webhookData = {
       id,
-      label,
+      label: webhookLabel,
       status: validStatus,
       content_type: contentType,
       destination: validDestination,
-      tags: Array.isArray(tags)
-        ? tags.map(t => (t || '').toString().trim()).filter(t => t !== '')
-        : (typeof tags === 'string' && tags.trim() !== '')
-          ? tags.split(',').map(t => t.trim()).filter(t => t !== '')
-          : []
+      tags: [] // Keep tags as empty array for backward compatibility
     };
     
     await saveWebhook(webhookData);

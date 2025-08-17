@@ -181,7 +181,7 @@ app.get('/', async (req, res) => {
 // Create webhook
 app.post('/webhooks', async (req, res) => {
   try {
-    const { status, content_type, destination, custom_content_type } = req.body;
+    const { status, content_type, destination, custom_content_type, tags } = req.body;
     
     const webhooks = await findWebhooks();
     let id = generateId();
@@ -242,7 +242,12 @@ app.post('/webhooks', async (req, res) => {
       label,
       status: validStatus,
       content_type: contentType,
-      destination: validDestination
+      destination: validDestination,
+      tags: Array.isArray(tags)
+        ? tags.map(t => (t || '').toString().trim()).filter(t => t !== '')
+        : (typeof tags === 'string' && tags.trim() !== '')
+          ? tags.split(',').map(t => t.trim()).filter(t => t !== '')
+          : []
     };
     
     await saveWebhook(webhookData);
@@ -415,6 +420,7 @@ app.get('/request/:id', async (req, res) => {
     const rid = req.query.rid;
     
     const requests = await findRequests(id);
+  const webhook = await findWebhookById(id);
     
     // Assign request IDs for selection
     requests.forEach((request, index) => {
@@ -433,6 +439,7 @@ app.get('/request/:id', async (req, res) => {
     
     res.render('requests', {
       webhookId: id,
+      webhook: webhook || null,
       requests,
       selected,
       selectedRid: selected ? selected.rid : null

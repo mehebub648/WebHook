@@ -27,6 +27,10 @@ const webhookSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  tags: {
+    type: [String],
+    default: []
+  },
   created_at: {
     type: Date,
     default: Date.now

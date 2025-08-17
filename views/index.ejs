@@ -97,14 +97,14 @@
             <p class="mt-1 text-[11px] text-slate-500">Sets the <code class="font-mono">Content-Type</code> header.</p>
           </div>
 
-          <!-- Tags -->
+          <!-- Label -->
           <div class="md:col-span-4">
-            <label class="text-xs font-medium text-slate-600 mb-1 block">Tags</label>
+            <label class="text-xs font-medium text-slate-600 mb-1 block">Label</label>
             <div class="flex items-center gap-2 bg-white border border-slate-300 rounded-lg px-2 py-2 min-h-10">
-              <input name="tags" type="text" placeholder="comma-separated tags, e.g. api,internal"
+              <input name="label" type="text" placeholder="e.g. Payment API, Internal Hook"
                      class="flex-1 bg-transparent text-sm text-slate-700 placeholder-slate-400 focus:outline-none" />
             </div>
-            <p class="mt-1 text-[11px] text-slate-500">Optional. Enter comma-separated tags for the URL.</p>
+            <p class="mt-1 text-[11px] text-slate-500">Optional. Custom name for the webhook (defaults to "URL X").</p>
           </div>
         </div>
 
@@ -211,13 +211,6 @@
                     <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">
                       <i class="fa-solid fa-tag text-[10px]"></i><%= webhook.label %>
                     </span>
-                    <% if (webhook.tags && webhook.tags.length > 0) { %>
-                      <span class="ml-2 text-xs text-slate-600">Tags:
-                        <% webhook.tags.forEach(function(t,i){ %>
-                          <code class="font-mono ml-1"><%= t %></code><%= i < webhook.tags.length-1 ? ',' : '' %>
-                        <% }); %>
-                      </span>
-                    <% } %>
                   </div>
                 </div>
                 <button type="button" class="ml-auto text-slate-500 hover:text-slate-700 size-8 grid place-items-center rounded-md hover:bg-slate-200/60"

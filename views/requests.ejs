@@ -123,12 +123,9 @@
             </button>
           </div>
 
-          <% if (webhook && webhook.tags && webhook.tags.length > 0) { %>
+          <% if (webhook && webhook.label) { %>
             <div class="mt-2 text-xs text-slate-600">
-              Tags:
-              <% webhook.tags.forEach(function(t,i){ %>
-                <span class="chip text-xs font-mono ml-2"><%= t %></span>
-              <% }); %>
+              Label: <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 font-medium"><%= webhook.label %></span>
             </div>
           <% } %>
 

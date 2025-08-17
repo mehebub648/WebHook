@@ -194,7 +194,7 @@ app.get('/', async (req, res) => {
 // Create webhook
 app.post('/webhooks', async (req, res) => {
   try {
-    const { status, content_type, destination, custom_content_type, tags } = req.body;
+    const { status, content_type, destination, custom_content_type, label } = req.body;
     
     const webhooks = await findWebhooks();
     let id = generateId();
@@ -208,7 +208,8 @@ app.post('/webhooks', async (req, res) => {
       tries++;
     }
     
-    const label = getNextLabel(webhooks);
+    // Use provided label or generate default
+    const webhookLabel = (label && label.trim() !== '') ? label.trim() : getNextLabel(webhooks);
     
     // Validate status
     let validStatus = parseInt(status) || 200;
@@ -252,15 +253,11 @@ app.post('/webhooks', async (req, res) => {
     
     const webhookData = {
       id,
-      label,
+      label: webhookLabel,
       status: validStatus,
       content_type: contentType,
       destination: validDestination,
-      tags: Array.isArray(tags)
-        ? tags.map(t => (t || '').toString().trim()).filter(t => t !== '')
-        : (typeof tags === 'string' && tags.trim() !== '')
-          ? tags.split(',').map(t => t.trim()).filter(t => t !== '')
-          : []
+      tags: [] // Keep tags as empty array for backward compatibility
     };
     
     await saveWebhook(webhookData);

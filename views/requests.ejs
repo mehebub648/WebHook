@@ -7,126 +7,237 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
   <script>
-    document.addEventListener('DOMContentLoaded', function(){
-      const origin = window.location.origin.replace(/\/$/, '');
-      const el = document.getElementById('fullWebhook');
-      if (el && el.dataset.rel) {
-        el.textContent = origin + '/' + el.dataset.rel.replace(/^\//,'');
+    tailwind.config = {
+      theme: {
+        extend: {
+          keyframes: {
+            fadein: { '0%': {opacity:0, transform:'translateY(6px)'}, '100%': {opacity:1, transform:'translateY(0)'} },
+            scalein: { '0%': {opacity:0, transform:'scale(.96)'}, '100%': {opacity:1, transform:'scale(1)'} },
+          },
+          animation: { fadein:'fadein .25s ease-out', scalein:'scalein .2s ease-out' },
+          boxShadow: { soft: '0 2px 20px -4px rgba(2,6,23,.08)' }
+        }
       }
-      document.getElementById('copyWebhook')?.addEventListener('click', function(){
-        if (el) navigator.clipboard.writeText(el.textContent).then(()=> showToast('Copied URL'));
-      });
-    });
-    
+    }
+  </script>
+  <style>
+    .glass{backdrop-filter:blur(10px);background:rgba(255,255,255,.75)}
+    .chip{display:inline-flex;align-items:center;gap:.375rem;padding:.25rem .5rem;border-radius:.5rem;border:1px solid rgb(203 213 225);background-color:rgb(248 250 252)}
+    .codecard pre{max-height:40vh;overflow:auto}
+  </style>
+  <script>
     function showToast(msg){
       const t = document.createElement('div');
-      t.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-4 py-2 rounded-lg shadow-lg';
+      t.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-4 py-2 rounded-lg shadow-lg animate-fadein z-50';
       t.textContent = msg;
       document.body.appendChild(t);
       setTimeout(()=>{ t.classList.add('opacity-0','transition','duration-300'); }, 1200);
       setTimeout(()=>{ t.remove(); }, 1600);
     }
+
+    document.addEventListener('DOMContentLoaded', function(){
+      // Render full origin URL for the webhook
+      const origin = window.location.origin.replace(/\/$/, '');
+      const el = document.getElementById('fullWebhook');
+      if (el && el.dataset.rel) el.textContent = origin + '/' + el.dataset.rel.replace(/^\//,'');
+
+      document.getElementById('copyWebhook')?.addEventListener('click', function(){
+        if (el) navigator.clipboard.writeText(el.textContent).then(()=> showToast('Copied URL'));
+      });
+
+      // Locale-format all timestamps
+      document.querySelectorAll('.js-time').forEach(span=>{
+        const iso = span.getAttribute('data-iso');
+        if(iso){
+          try{ span.textContent = new Date(iso).toLocaleString(); }catch(_){}
+        }
+      });
+
+      // Copy buttons for code blocks
+      document.querySelectorAll('[data-copy-target]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const pre = document.getElementById(btn.getAttribute('data-copy-target'));
+          if(!pre) return;
+          const text = pre.textContent || pre.innerText || '';
+          navigator.clipboard.writeText(text).then(()=> showToast('Copied'));
+        });
+      });
+
+      // Filter in sidebar
+      const filter = document.getElementById('reqFilter');
+      const items = Array.from(document.querySelectorAll('[data-req-item]'));
+      filter?.addEventListener('input', ()=>{
+        const q = filter.value.toLowerCase().trim();
+        let visible = 0;
+        items.forEach(a=>{
+          const hay = (a.getAttribute('data-path')+' '+a.getAttribute('data-method')+' '+a.getAttribute('data-status')).toLowerCase();
+          const match = !q || hay.includes(q);
+          a.classList.toggle('hidden', !match);
+          if(match) visible++;
+        });
+        document.getElementById('reqCount').textContent = String(visible);
+      });
+
+      // Ensure active item is visible
+      const active = document.querySelector('[data-req-item].!bg-slate-50');
+      if(active){
+        active.scrollIntoView({ block:'nearest' });
+      }
+    });
   </script>
 </head>
-<body>
-  <div class="min-h-screen bg-gray-50 text-slate-900">
-    <div class="max-w-6xl mx-auto px-4 py-8">
-      <div class="grid grid-cols-1 md:grid-cols-[320px,1fr] gap-4">
-        <!-- Sidebar -->
-        <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-          <div class="px-4 py-4 border-b border-gray-200">
-            <div class="text-sm text-slate-600">Requests · <code class="font-mono text-slate-900"><%= webhookId %></code></div>
-            <div class="mt-2 font-mono text-sky-700 break-all flex items-center gap-2">
-              <i class="fa-solid fa-link"></i>
-              <a href="/webhook/<%= encodeURIComponent(webhookId) %>" class="hover:underline" title="Open webhook">
-                <span id="fullWebhook" data-rel="webhook/<%= encodeURIComponent(webhookId) %>">webhook/<%= webhookId %></span>
-              </a>
-              <button id="copyWebhook" type="button" class="text-slate-500 hover:text-slate-700" title="Copy full URL">
-                <i class="fa-regular fa-copy"></i>
-              </button>
-            </div>
-            <div class="mt-3">
-              <a class="inline-flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white font-semibold px-3 py-2 rounded-lg shadow-sm transition" href="/">
-                <i class="fa-solid fa-arrow-left"></i>
-                Back to Index
-              </a>
-            </div>
+<body class="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50 text-slate-900">
+  <header class="glass border-b border-slate-200/70">
+    <div class="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="size-10 rounded-xl bg-slate-900 text-white grid place-items-center"><i class="fa-solid fa-list"></i></div>
+        <div>
+          <h1 class="text-xl md:text-2xl font-semibold">Requests</h1>
+          <div class="text-slate-600 text-sm">
+            for <code class="font-mono text-slate-800"><%= webhookId %></code>
           </div>
-          <div class="max-h-[70vh] overflow-auto divide-y divide-gray-100">
-            <% if (requests.length === 0) { %>
-              <div class="px-4 py-6 text-slate-600">No requests yet.</div>
-            <% } else { %>
-              <% requests.forEach(request => { 
-                const active = (request.rid === selectedRid);
-                const requestTime = new Date(request.time).toISOString();
-              %>
-                <a class="block px-4 py-3 hover:bg-gray-50 transition <%= active ? 'bg-gray-50' : '' %>" 
-                   href="/request/<%= encodeURIComponent(webhookId) %>?rid=<%= encodeURIComponent(request.rid) %>">
-                  <div class="flex items-center gap-2 text-sm">
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-gray-300 bg-gray-50 text-slate-700 font-mono text-xs"><%= request.method %></span>
-                    <span class="text-slate-500 font-mono text-xs"><%= requestTime %></span>
-                    <% if (request.response_status) { %>
-                      <span class="ml-auto inline-flex items-center gap-1 text-xs text-slate-500">
-                        <i class="fa-solid fa-signal"></i><%= request.response_status %>
-                      </span>
-                    <% } %>
-                  </div>
-                  <div class="font-mono text-slate-600 text-xs mt-1 break-all"><%= request.path || request.full_url %></div>
-                </a>
-              <% }); %>
-            <% } %>
+        </div>
+      </div>
+      <a class="inline-flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white font-medium px-3 py-2 rounded-lg shadow-sm transition" href="/">
+        <i class="fa-solid fa-arrow-left"></i> Back to Index
+      </a>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-6">
+    <div class="grid grid-cols-1 md:grid-cols-[340px,1fr] gap-4">
+      <!-- Sidebar -->
+      <aside class="md:sticky md:top-6 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-soft h-fit">
+        <div class="px-4 py-4 border-b border-slate-200">
+          <div class="text-sm text-slate-600">Webhook</div>
+          <div class="mt-1 font-mono text-sky-700 break-all flex items-center gap-2">
+            <i class="fa-solid fa-link"></i>
+            <a href="/webhook/<%= encodeURIComponent(webhookId) %>" class="hover:underline" title="Open webhook">
+              <span id="fullWebhook" data-rel="webhook/<%= encodeURIComponent(webhookId) %>">webhook/<%= webhookId %></span>
+            </a>
+            <button id="copyWebhook" type="button" class="text-slate-500 hover:text-slate-700 size-7 grid place-items-center rounded-md hover:bg-slate-100" title="Copy full URL">
+              <i class="fa-regular fa-copy"></i>
+            </button>
+          </div>
+
+          <!-- Filter -->
+          <div class="mt-3">
+            <label class="text-xs text-slate-600 mb-1 block">Filter</label>
+            <div class="flex bg-white border border-slate-300 rounded-lg overflow-hidden">
+              <input id="reqFilter" type="text" placeholder="method, status, path…"
+                     class="w-full bg-transparent px-3 py-2 text-sm focus:outline-none" />
+              <div class="px-3 grid place-items-center text-slate-500 border-l border-slate-300">
+                <i class="fa-solid fa-magnifying-glass"></i>
+              </div>
+            </div>
+            <div class="mt-1 text-xs text-slate-500">
+              <span id="reqCount"><%= requests.length %></span> request<%= requests.length===1?'':'s' %>
+            </div>
           </div>
         </div>
 
-        <!-- Main -->
-        <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-          <% if (!selected) { %>
-            <div class="border border-gray-200 rounded-xl p-4 bg-gray-50 text-slate-600">Select a request from the left to view details.</div>
+        <div class="max-h-[70vh] overflow-auto divide-y divide-slate-100">
+          <% if (requests.length === 0) { %>
+            <div class="px-4 py-6 text-slate-600">No requests yet.</div>
           <% } else { %>
-            <%
-              const prettyHeaders = JSON.stringify(selected.headers || {}, null, 2);
-              const prettyQuery = JSON.stringify(selected.query || {}, null, 2);
-              let prettyBody = selected.body || '';
-              
-              try {
-                const decoded = JSON.parse(selected.body);
-                prettyBody = JSON.stringify(decoded, null, 2);
-              } catch (e) {
-                // Not JSON, use as is
-              }
-              
-              const respStatus = selected.response_status || 200;
-              const requestTime = new Date(selected.time).toISOString();
+            <% requests.forEach(request => { 
+              const active = (request.rid === selectedRid);
+              const requestTime = new Date(request.time).toISOString();
             %>
-            <h1 class="text-xl font-semibold mb-3">Request Details</h1>
-            <div class="grid md:grid-cols-2 gap-3">
-              <div class="border border-gray-200 rounded-xl p-3 bg-gray-50">
-                <div class="grid grid-cols-[max-content,1fr] gap-x-4 gap-y-2 font-mono text-sm">
-                  <div class="text-slate-500">Time</div><div><%= requestTime %></div>
-                  <div class="text-slate-500">IP</div><div><%= selected.ip %></div>
-                  <div class="text-slate-500">Method</div><div><%= selected.method %></div>
-                  <div class="text-slate-500">Response</div><div><%= respStatus %></div>
-                  <div class="text-slate-500">Full URL</div><div class="break-all"><%= selected.full_url %></div>
-                  <div class="text-slate-500">User-Agent</div><div class="break-all"><%= selected.user_agent %></div>
+              <a data-req-item
+                 data-path="<%= (request.path || request.full_url || '') %>"
+                 data-method="<%= request.method %>"
+                 data-status="<%= request.response_status || '' %>"
+                 class="block px-4 py-3 hover:bg-slate-50 transition <%= active ? '!bg-slate-50' : '' %>" 
+                 href="/request/<%= encodeURIComponent(webhookId) %>?rid=<%= encodeURIComponent(request.rid) %>">
+                <div class="flex items-center gap-2 text-sm">
+                  <span class="chip font-mono text-xs"><%= request.method %></span>
+                  <span class="text-slate-500 font-mono text-xs js-time" data-iso="<%= requestTime %>"><%= requestTime %></span>
+                  <% if (request.response_status) { %>
+                    <span class="ml-auto inline-flex items-center gap-1 text-xs text-slate-500">
+                      <i class="fa-solid fa-signal"></i><%= request.response_status %>
+                    </span>
+                  <% } %>
                 </div>
-              </div>
-              <div class="border border-gray-200 rounded-xl p-3 bg-gray-50">
-                <div class="text-slate-500 text-sm mb-1">Headers</div>
-                <pre class="whitespace-pre-wrap break-all font-mono text-sm"><%= prettyHeaders %></pre>
-              </div>
-              <div class="border border-gray-200 rounded-xl p-3 bg-gray-50 md:col-span-2">
-                <div class="text-slate-500 text-sm mb-1">Query Params</div>
-                <pre class="whitespace-pre-wrap break-all font-mono text-sm"><%= prettyQuery %></pre>
-              </div>
-              <div class="border border-gray-200 rounded-xl p-3 bg-gray-50 md:col-span-2">
-                <div class="text-slate-500 text-sm mb-1">Body</div>
-                <pre class="whitespace-pre-wrap break-all font-mono text-sm"><%= prettyBody %></pre>
-              </div>
-            </div>
+                <div class="font-mono text-slate-600 text-xs mt-1 break-all"><%= request.path || request.full_url %></div>
+              </a>
+            <% }); %>
           <% } %>
         </div>
-      </div>
+      </aside>
+
+      <!-- Main -->
+      <section class="bg-white border border-slate-200 rounded-2xl p-5 shadow-soft">
+        <% if (!selected) { %>
+          <div class="border border-slate-200 rounded-xl p-4 bg-slate-50 text-slate-600">Select a request from the left to view details.</div>
+        <% } else { %>
+          <%
+            const prettyHeaders = JSON.stringify(selected.headers || {}, null, 2);
+            const prettyQuery = JSON.stringify(selected.query || {}, null, 2);
+            let prettyBody = selected.body || '';
+            try {
+              const decoded = JSON.parse(selected.body);
+              prettyBody = JSON.stringify(decoded, null, 2);
+            } catch (e) { /* leave as-is */ }
+            const respStatus = selected.response_status || 200;
+            const requestTime = new Date(selected.time).toISOString();
+            const ridSafe = (selected.rid || 'req').replace(/[^a-zA-Z0-9_-]/g,'');
+          %>
+
+          <div class="flex items-start justify-between gap-3">
+            <h2 class="text-xl font-semibold">Request Details</h2>
+            <div class="flex items-center gap-2">
+              <span class="chip text-xs"><i class="fa-solid fa-signal"></i> <%= respStatus %></span>
+              <span class="chip text-xs font-mono"><%= selected.method %></span>
+            </div>
+          </div>
+
+          <div class="mt-3 grid md:grid-cols-2 gap-3">
+            <!-- Meta -->
+            <div class="border border-slate-200 rounded-xl p-3 bg-slate-50">
+              <div class="grid grid-cols-[max-content,1fr] gap-x-4 gap-y-2 font-mono text-sm">
+                <div class="text-slate-500">Time</div><div class="js-time" data-iso="<%= requestTime %>"><%= requestTime %></div>
+                <div class="text-slate-500">IP</div><div><%= selected.ip %></div>
+                <div class="text-slate-500">Method</div><div><%= selected.method %></div>
+                <div class="text-slate-500">Response</div><div><%= respStatus %></div>
+                <div class="text-slate-500">Full URL</div><div class="break-all"><%= selected.full_url %></div>
+                <div class="text-slate-500">User-Agent</div><div class="break-all"><%= selected.user_agent %></div>
+              </div>
+            </div>
+
+            <!-- Headers -->
+            <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 codecard">
+              <div class="flex items-center justify-between">
+                <div class="text-slate-500 text-sm">Headers</div>
+                <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                        data-copy-target="hdr-<%= ridSafe %>"><i class="fa-regular fa-copy"></i> Copy</button>
+              </div>
+              <pre id="hdr-<%= ridSafe %>" class="whitespace-pre-wrap break-all font-mono text-sm mt-1"><%= prettyHeaders %></pre>
+            </div>
+
+            <!-- Query -->
+            <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 md:col-span-2 codecard">
+              <div class="flex items-center justify-between">
+                <div class="text-slate-500 text-sm">Query Params</div>
+                <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                        data-copy-target="qry-<%= ridSafe %>"><i class="fa-regular fa-copy"></i> Copy</button>
+              </div>
+              <pre id="qry-<%= ridSafe %>" class="whitespace-pre-wrap break-all font-mono text-sm mt-1"><%= prettyQuery %></pre>
+            </div>
+
+            <!-- Body -->
+            <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 md:col-span-2 codecard">
+              <div class="flex items-center justify-between">
+                <div class="text-slate-500 text-sm">Body</div>
+                <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                        data-copy-target="body-<%= ridSafe %>"><i class="fa-regular fa-copy"></i> Copy</button>
+              </div>
+              <pre id="body-<%= ridSafe %>" class="whitespace-pre-wrap break-all font-mono text-sm mt-1"><%= prettyBody %></pre>
+            </div>
+          </div>
+        <% } %>
+      </section>
     </div>
-  </div>
+  </main>
 </body>
 </html>

@@ -95,6 +95,9 @@
           <h1 class="text-xl md:text-2xl font-semibold">Requests</h1>
           <div class="text-slate-600 text-sm">
             for <code class="font-mono text-slate-800"><%= webhookId %></code>
+            <span id="live_indicator" title="Live updates" class="inline-flex items-center gap-2 ml-3 text-xs text-emerald-600">
+              <span id="live_dot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Live
+            </span>
           </div>
         </div>
       </div>
@@ -253,4 +256,95 @@
     </div>
   </main>
 </body>
+<script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+<script>
+  (function(){
+    try {
+      const webhookRoom = '<%= webhookId %>';
+      const socket = io();
+
+      function setLiveConnected(yes){
+        const liveDot = document.getElementById('live_dot');
+        if(!liveDot) return;
+        liveDot.classList.toggle('bg-emerald-500', yes);
+        liveDot.classList.toggle('bg-red-500', !yes);
+      }
+
+      socket.on('connect', ()=>{ 
+        console.info('Socket connected', socket.id); 
+        try{ socket.emit('join', webhookRoom); console.info('Joining room', webhookRoom); }catch(e){}
+        setLiveConnected(true); 
+      });
+      socket.on('disconnect', (reason)=>{ console.info('Socket disconnected', reason); setLiveConnected(false); });
+      socket.on('reconnect', (n)=>{ try{ socket.emit('join', webhookRoom); }catch(e){} });
+
+      function formatISO(iso){ try{ return new Date(iso).toISOString(); }catch(e){ return iso; } }
+
+      function insertRequest(request){
+        try{
+          const container = document.querySelector('aside .max-h-[70vh]');
+          if(!container) return;
+
+          // If 'No requests yet.' exists, remove it
+          const firstChild = container.firstElementChild;
+          if(firstChild && firstChild.textContent && firstChild.textContent.includes('No requests yet.')){
+            firstChild.remove();
+          }
+
+          const a = document.createElement('a');
+          a.setAttribute('data-req-item','');
+          a.setAttribute('data-path', request.path || request.full_url || '');
+          a.setAttribute('data-method', request.method || '');
+          a.setAttribute('data-status', request.response_status || '');
+          a.href = '/request/' + encodeURIComponent('<%= webhookId %>') + '?rid=' + encodeURIComponent(request.rid);
+          a.className = 'block px-4 py-3 hover:bg-slate-50 transition';
+
+          const requestTime = formatISO(request.time || new Date());
+          a.innerHTML = `
+            <div class="flex items-center gap-2 text-sm">
+              <span class="chip font-mono text-xs">${request.method || ''}</span>
+              <span class="text-slate-500 font-mono text-xs js-time" data-iso="${requestTime}">${requestTime}</span>
+              ${request.response_status ? `<span class="ml-auto inline-flex items-center gap-1 text-xs text-slate-500"><i class="fa-solid fa-signal"></i>${request.response_status}</span>` : ''}
+            </div>
+            <div class="font-mono text-slate-600 text-xs mt-1 break-all">${request.path || request.full_url || ''}</div>
+          `;
+
+          container.insertBefore(a, container.firstChild);
+
+          // Re-run timestamp formatting for the new item
+          try{ document.querySelectorAll('.js-time').forEach(span=>{ const iso = span.getAttribute('data-iso'); if(iso) span.textContent = new Date(iso).toLocaleString(); }); }catch(e){}
+
+          // Update counter
+          const rc = document.getElementById('reqCount');
+          if(rc){ rc.textContent = String(Number(rc.textContent||0)+1); }
+        }catch(e){ console.warn('insertRequest error', e); }
+      }
+
+      socket.on('request:new', (data)=>{ insertRequest(data || {}); const sel = document.querySelector('section'); if(sel){ sel.animate([{ boxShadow:'0 0 0px 0 rgba(34,197,94,0)' },{ boxShadow:'0 0 14px 6px rgba(34,197,94,.06)' },{ boxShadow:'0 0 0px 0 rgba(34,197,94,0)' }], { duration: 900 }); } });
+
+      socket.on('request:updated', (data)=>{
+        try{
+          // Update any list item matching the rid by href query
+          if(!data || !data.rid) return;
+          const anchors = Array.from(document.querySelectorAll('[data-req-item]'));
+          anchors.forEach(a=>{
+            if(a.href && a.href.includes('rid=' + encodeURIComponent(data.rid))){
+              // update status badge inside
+              const badge = a.querySelector('.fa-signal') ? a.querySelector('.fa-signal').parentElement : null;
+              if(badge && data.response_status){ badge.innerHTML = `<i class="fa-solid fa-signal"></i>${data.response_status}`; }
+            }
+          });
+          // If the detailed view is open for this rid, refresh page fragment (simple approach: reload page)
+          const selectedRid = '<%= selectedRid %>';
+          if(selectedRid && data.rid === selectedRid){
+            // Update response status chip in detail pane
+            const chip = document.querySelector('section .chip');
+            if(chip && data.response_status) chip.textContent = data.response_status;
+          }
+        }catch(e){ }
+      });
+
+    } catch (e) { console.warn('Live init failed', e); }
+  })();
+</script>
 </html>

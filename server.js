@@ -9,6 +9,14 @@ const Request = require('./models/request');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Default no-op emitter so routes can call it even if Socket.IO failed to init yet
+app.emitRequestEvent = function () { /* no-op until Socket.IO attaches */ };
+
+// Create HTTP server and attach Socket.IO later
+const http = require('http');
+const server = http.createServer(app);
+let io;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/webhook-app';
 
 // In-memory storage fallback
@@ -311,6 +319,11 @@ app.all('/webhook/:id', async (req, res) => {
     // Save request to database
     try {
       await saveRequest(requestEntry);
+      // Emit socket event for new request (serialize Date to ISO)
+      try {
+        const payload = Object.assign({}, requestEntry, { time: (requestEntry.time && requestEntry.time.toISOString) ? requestEntry.time.toISOString() : requestEntry.time });
+        app.emitRequestEvent(id, 'request:new', payload);
+      } catch (e) { /* ignore emit errors */ }
     } catch (error) {
       console.warn('Failed to save request:', error.message);
     }
@@ -368,6 +381,10 @@ app.all('/webhook/:id', async (req, res) => {
             proxied_status: response.status,
             response_status: response.status
           });
+          // Emit socket update for proxied status
+          try {
+            app.emitRequestEvent(id, 'request:updated', { rid: requestEntry.rid, proxied_status: response.status, response_status: response.status });
+          } catch (e) { }
         } catch (error) {
           console.warn('Failed to update request:', error.message);
         }
@@ -381,6 +398,7 @@ app.all('/webhook/:id', async (req, res) => {
             proxy_error: proxyError.message,
             response_status: 502
           });
+          try { app.emitRequestEvent(id, 'request:updated', { rid: requestEntry.rid, proxy_error: proxyError.message, response_status: 502 }); } catch(e){}
         } catch (error) {
           console.warn('Failed to update request:', error.message);
         }
@@ -468,10 +486,49 @@ app.post('/webhooks/delete', async (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Webhook application running on port ${PORT}`);
-  console.log(`Dashboard: http://localhost:${PORT}`);
-});
+// Start server (use http server so Socket.IO can attach)
+function startServer() {
+  try {
+    const { Server } = require('socket.io');
+    io = new Server(server, {
+      cors: { origin: '*' }
+    });
+
+    io.on('connection', (socket) => {
+      console.log('Socket.IO client connected:', socket.id);
+      // Join room for a particular webhook id
+      socket.on('join', (room) => {
+        if (!room) return;
+        socket.join(String(room));
+        console.log('Socket joined room', String(room), 'by', socket.id);
+      });
+      socket.on('leave', (room) => {
+        if (!room) return;
+        socket.leave(String(room));
+      });
+    });
+
+    // Attach a helper to emit webhook request events
+    app.emitRequestEvent = function (webhookId, eventName, payload) {
+      try {
+        if (io && webhookId) {
+          io.to(String(webhookId)).emit(eventName, payload);
+          console.log('Emitted', eventName, 'to', String(webhookId));
+        }
+      } catch (e) {
+        console.warn('emitRequestEvent failed:', e && e.message);
+      }
+    };
+  } catch (e) {
+    console.warn('Socket.IO not available:', e && e.message);
+  }
+
+  server.listen(PORT, () => {
+    console.log(`Webhook application running on port ${PORT}`);
+    console.log(`Dashboard: http://localhost:${PORT}`);
+  });
+}
+
+startServer();
 
 module.exports = app;

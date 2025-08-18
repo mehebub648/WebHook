@@ -273,9 +273,9 @@
   </main>
 
   <!-- Modal -->
-  <div id="modal_overlay" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-200"></div>
-  <div id="modal_panel" role="dialog" aria-modal="true" aria-labelledby="modal_title" aria-describedby="modal_desc" class="fixed inset-0 grid place-items-center pointer-events-none">
-    <div id="modal_inner" class="w-full max-w-md mx-4 translate-y-4 opacity-0 pointer-events-auto">
+  <div id="modal_overlay" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm opacity-0 transition-opacity duration-200"></div>
+  <div id="modal_panel" role="dialog" aria-modal="true" aria-labelledby="modal_title" aria-describedby="modal_desc" class="hidden fixed inset-0 grid place-items-center">
+  <div id="modal_inner" class="w-full max-w-md mx-4 translate-y-4 opacity-0">
       <div class="rounded-2xl bg-white shadow-xl border border-slate-200 p-5 animate-scalein">
         <div class="flex items-start gap-3">
           <div class="size-10 rounded-xl bg-rose-100 text-rose-700 grid place-items-center">
@@ -316,17 +316,30 @@
     const modal = {
       overlay:null,panel:null,inner:null,idEl:null,labelEl:null,confirmBtn:null,cancelBtn:null,prevFocus:null,currentId:null,
       open(id,label){
-        this.currentId=id; this.idEl.textContent=id; this.labelEl.textContent=label||'—';
+        this.currentId = id; this.idEl.textContent = id; this.labelEl.textContent = label || '—';
         this.prevFocus = document.activeElement;
-        this.overlay.classList.remove('pointer-events-none'); this.panel.classList.remove('pointer-events-none');
-        requestAnimationFrame(()=>{ this.overlay.classList.add('opacity-100'); this.overlay.classList.remove('opacity-0'); this.inner.classList.remove('translate-y-4','opacity-0'); });
+        // Make elements display (remove display:none) before animating
+        this.overlay.classList.remove('hidden'); this.panel.classList.remove('hidden');
+        // Ensure start state for transition
+        this.overlay.classList.remove('opacity-100'); this.overlay.classList.add('opacity-0');
+        this.inner.classList.add('translate-y-4','opacity-0');
+        // Next frame, run show transitions
+        requestAnimationFrame(()=>{
+          this.overlay.classList.add('opacity-100'); this.overlay.classList.remove('opacity-0');
+          this.inner.classList.remove('translate-y-4','opacity-0');
+        });
         this.confirmBtn.focus(); document.addEventListener('keydown', this._esc);
       },
       close(){
+        // start hide animation
         this.inner.classList.add('translate-y-4','opacity-0','transition','duration-150');
         this.overlay.classList.remove('opacity-100'); this.overlay.classList.add('opacity-0');
-        setTimeout(()=>{ this.overlay.classList.add('pointer-events-none'); this.panel.classList.add('pointer-events-none'); this.inner.classList.remove('transition','duration-150'); },150);
-        document.removeEventListener('keydown', this._esc); this.currentId=null;
+        // after transition end, hide from layout (display:none)
+        setTimeout(()=>{
+          this.overlay.classList.add('hidden'); this.panel.classList.add('hidden');
+          this.inner.classList.remove('transition','duration-150');
+        },150);
+        document.removeEventListener('keydown', this._esc); this.currentId = null;
         if(this.prevFocus && this.prevFocus.focus) this.prevFocus.focus();
       },
       _esc(e){ if(e.key==='Escape') modal.close(); }

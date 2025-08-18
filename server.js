@@ -7,8 +7,11 @@ const axios = require('axios');
 const Webhook = require('./models/webhook');
 const Request = require('./models/request');
 
+// Load environment variables
+require('dotenv').config();
+
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT;
 
 // Default no-op emitter so routes can call it even if Socket.IO failed to init yet
 app.emitRequestEvent = function () { /* no-op until Socket.IO attaches */ };
@@ -17,7 +20,7 @@ app.emitRequestEvent = function () { /* no-op until Socket.IO attaches */ };
 const http = require('http');
 const server = http.createServer(app);
 let io;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/webhook-app';
+const MONGODB_URI = process.env.MONGODB_URI;
 
 // In-memory storage fallback (deprecated) — prefer file-based JSON storage when MongoDB is unreachable
 let mongoConnected = false;
@@ -114,7 +117,13 @@ function getNextLabel(existingWebhooks) {
 // In-memory storage helpers
 async function findWebhooks() {
   if (mongoConnected) {
-    return await Webhook.find().sort({ created_at: -1 });
+    const docs = await Webhook.find().sort({ created_at: -1 }).lean();
+    // Ensure each returned object has an `id` property (fallback to `_id` for legacy docs)
+    return docs.map(w => {
+      if (!w) return w;
+      if (!w.id && w._id) w.id = String(w._id);
+      return w;
+    });
   } else {
     const files = await listWebhookFiles();
     const webhooks = [];
@@ -131,7 +140,9 @@ async function findWebhooks() {
 
 async function findWebhookById(id) {
   if (mongoConnected) {
-    return await Webhook.findOne({ id });
+  const doc = await Webhook.findOne({ id }).lean();
+  if (doc && !doc.id && doc._id) doc.id = String(doc._id);
+  return doc;
   } else {
   const parsed = await readWebhookFile(id);
   return parsed && parsed.webhook ? parsed.webhook : null;

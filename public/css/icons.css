@@ -1,0 +1,55 @@
+/* FontAwesome icon replacements using Unicode symbols and CSS */
+
+.fa, .fas, .far, .fa-solid, .fa-regular {
+  font-family: "FontAwesome", sans-serif;
+  font-style: normal;
+  font-weight: normal;
+  text-decoration: inherit;
+  display: inline-block;
+}
+
+/* Common icons using Unicode symbols */
+.fa-list::before { content: "≡"; }
+.fa-link::before { content: "🔗"; }
+.fa-bolt::before { content: "⚡"; }
+.fa-shuffle::before { content: "🔀"; }
+.fa-eye::before { content: "👁"; }
+.fa-signal::before { content: "📶"; }
+.fa-magnifying-glass::before { content: "🔍"; }
+.fa-arrow-turn-up::before { content: "↰"; }
+.fa-file-code::before { content: "📄"; }
+.fa-copy::before { content: "📋"; }
+.fa-trash::before { content: "🗑"; }
+.fa-plus::before { content: "+"; }
+.fa-arrow-left::before { content: "←"; }
+.fa-external-link::before { content: "↗"; }
+.fa-clock::before { content: "🕐"; }
+.fa-server::before { content: "🖥"; }
+.fa-globe::before { content: "🌐"; }
+.fa-cog::before { content: "⚙"; }
+.fa-settings::before { content: "⚙"; }
+.fa-check::before { content: "✓"; }
+.fa-times::before { content: "✗"; }
+.fa-edit::before { content: "✏"; }
+.fa-save::before { content: "💾"; }
+.fa-download::before { content: "⬇"; }
+.fa-upload::before { content: "⬆"; }
+.fa-refresh::before { content: "🔄"; }
+.fa-spinner::before { content: "⟳"; }
+
+/* Size utilities */
+.fa-xs { font-size: 0.75em; }
+.fa-sm { font-size: 0.875em; }
+.fa-lg { font-size: 1.33em; }
+.fa-xl { font-size: 1.5em; }
+.fa-2x { font-size: 2em; }
+
+/* Animation for spinner */
+.fa-spinner {
+  animation: fa-spin 2s infinite linear;
+}
+
+@keyframes fa-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

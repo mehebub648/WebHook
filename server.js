@@ -268,6 +268,78 @@ async function deleteRequests(webhookId) {
   }
 }
 
+// API Routes for enhanced request management
+
+// Get requests for a webhook as JSON
+app.get('/api/requests/:id', async (req, res) => {
+  try {
+    const id = sanitizeId(req.params.id) || 'default';
+    const requests = await findRequests(id);
+    
+    // Assign request IDs for selection
+    requests.forEach((request, index) => {
+      if (!request.rid) {
+        request.rid = `idx-${index}`;
+      }
+    });
+    
+    res.json({ 
+      webhookId: id, 
+      requests: requests,
+      total: requests.length 
+    });
+  } catch (error) {
+    console.error('Error loading requests:', error);
+    res.status(500).json({ error: 'Failed to load requests' });
+  }
+});
+
+// Get specific request details as JSON
+app.get('/api/requests/:id/:rid', async (req, res) => {
+  try {
+    const id = sanitizeId(req.params.id) || 'default';
+    const rid = req.params.rid;
+    
+    const requests = await findRequests(id);
+    const request = requests.find(r => r.rid === rid);
+    
+    if (!request) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+    
+    res.json(request);
+  } catch (error) {
+    console.error('Error loading request details:', error);
+    res.status(500).json({ error: 'Failed to load request details' });
+  }
+});
+
+// Update webhook forwarding configuration
+app.put('/api/webhooks/:id/forwarding', async (req, res) => {
+  try {
+    const id = sanitizeId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: 'Invalid webhook ID' });
+    }
+    
+    const { destination } = req.body;
+    
+    // Update webhook configuration
+    const webhook = await findWebhookById(id);
+    if (!webhook) {
+      return res.status(404).json({ error: 'Webhook not found' });
+    }
+    
+    webhook.destination = destination || '';
+    await saveWebhook(webhook);
+    
+    res.json({ success: true, destination: webhook.destination });
+  } catch (error) {
+    console.error('Error updating forwarding:', error);
+    res.status(500).json({ error: 'Failed to update forwarding configuration' });
+  }
+});
+
 // Routes
 
 // Main dashboard

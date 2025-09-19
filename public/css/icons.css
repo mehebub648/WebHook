@@ -1,0 +1,59 @@
+/* Simple FontAwesome replacement icons */
+.fa, .fas, .far, .fa-solid, .fa-regular {
+  display: inline-block;
+  font-style: normal;
+  font-variant: normal;
+  text-rendering: auto;
+  line-height: 1;
+}
+
+/* Icon mappings using Unicode symbols and CSS content */
+.fa-list::before { content: "☰"; }
+.fa-arrow-left::before { content: "←"; }
+.fa-link::before { content: "🔗"; }
+.fa-copy::before { content: "📋"; }
+.fa-magnifying-glass::before { content: "🔍"; }
+.fa-signal::before { content: "📶"; }
+.fa-eye::before { content: "👁"; }
+.fa-trash-can::before { content: "🗑"; }
+.fa-plus::before { content: "+"; }
+.fa-angles-down::before { content: "⌄⌄"; }
+.fa-code-branch::before { content: "⑂"; }
+.fa-wand-magic-sparkles::before { content: "✨"; }
+.fa-file-code::before { content: "📄"; }
+.fa-arrow-turn-up::before { content: "↩"; }
+.fa-bolt::before { content: "⚡"; }
+.fa-shuffle::before { content: "🔀"; }
+.fa-triangle-exclamation::before { content: "⚠"; }
+.fa-lightbulb::before { content: "💡"; }
+.fa-circle-question::before { content: "?"; }
+.fa-tag::before { content: "🏷"; }
+
+/* Size variations */
+.fa-xs { font-size: 0.75em; }
+.fa-sm { font-size: 0.875em; }
+.fa-lg { font-size: 1.125em; }
+.fa-xl { font-size: 1.5em; }
+.fa-2x { font-size: 2em; }
+
+/* Alternative simple geometric icons for better appearance */
+.icon-list::before { content: "≡"; font-weight: bold; }
+.icon-arrow-left::before { content: "‹"; font-weight: bold; font-size: 1.2em; }
+.icon-link::before { content: "⧉"; }
+.icon-copy::before { content: "⎘"; }
+.icon-search::before { content: "⌕"; }
+.icon-signal::before { content: "▥"; }
+.icon-eye::before { content: "◉"; }
+.icon-trash::before { content: "⌫"; }
+.icon-plus::before { content: "+"; font-weight: bold; }
+.icon-chevron::before { content: "⌄"; }
+.icon-code::before { content: "‹/›"; font-size: 0.8em; }
+.icon-magic::before { content: "✦"; }
+.icon-file::before { content: "📄"; }
+.icon-return::before { content: "↵"; }
+.icon-bolt::before { content: "⚡"; }
+.icon-shuffle::before { content: "⇄"; }
+.icon-warning::before { content: "△"; font-weight: bold; }
+.icon-bulb::before { content: "💡"; }
+.icon-help::before { content: "?"; font-weight: bold; border: 1px solid currentColor; border-radius: 50%; width: 1em; height: 1em; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8em; }
+.icon-tag::before { content: "🔖"; }

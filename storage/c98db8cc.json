@@ -1,0 +1,76 @@
+{
+  "webhook": {
+    "id": "c98db8cc",
+    "label": "URL 1",
+    "status": 200,
+    "content_type": "text/html",
+    "destination": "",
+    "tags": [],
+    "created_at": "2025-09-19T09:19:33.331Z"
+  },
+  "requests": [
+    {
+      "webhook_id": "c98db8cc",
+      "rid": "3a056125-27a5-4144-9d54-917e4011ca6d",
+      "time": "2025-09-19T09:23:29.122Z",
+      "ip": "::1",
+      "method": "POST",
+      "user_agent": "curl/8.5.0",
+      "headers": {
+        "host": "localhost:3001",
+        "user-agent": "curl/8.5.0",
+        "accept": "*/*",
+        "content-type": "application/json",
+        "content-length": "47"
+      },
+      "query": {},
+      "body": "{\"test\": \"request 1\", \"data\": \"sample payload\"}",
+      "full_url": "http://localhost:3001/webhook/c98db8cc",
+      "path": "/webhook/c98db8cc",
+      "response_status": 200
+    },
+    {
+      "webhook_id": "c98db8cc",
+      "rid": "6e1c4fd7-b887-460a-bdb3-4298cc0053d1",
+      "time": "2025-09-19T09:23:35.487Z",
+      "ip": "::1",
+      "method": "GET",
+      "user_agent": "curl/8.5.0",
+      "headers": {
+        "host": "localhost:3001",
+        "user-agent": "curl/8.5.0",
+        "accept": "*/*"
+      },
+      "query": {
+        "param1": "value1"
+      },
+      "body": "",
+      "full_url": "http://localhost:3001/webhook/c98db8cc?param1=value1",
+      "path": "/webhook/c98db8cc?param1=value1",
+      "response_status": 200
+    },
+    {
+      "webhook_id": "c98db8cc",
+      "rid": "dd0cde5c-ae3a-4d6b-89f4-54ae8828466d",
+      "time": "2025-09-19T09:23:42.251Z",
+      "ip": "::1",
+      "method": "PUT",
+      "user_agent": "curl/8.5.0",
+      "headers": {
+        "host": "localhost:3001",
+        "user-agent": "curl/8.5.0",
+        "accept": "*/*",
+        "content-type": "application/xml",
+        "content-length": "30"
+      },
+      "query": {
+        "param1": "value1",
+        "param2": "value2"
+      },
+      "body": "<data><item>test</item></data>",
+      "full_url": "http://localhost:3001/webhook/c98db8cc?param1=value1&param2=value2",
+      "path": "/webhook/c98db8cc?param1=value1&param2=value2",
+      "response_status": 200
+    }
+  ]
+}

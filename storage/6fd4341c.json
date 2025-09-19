@@ -8,5 +8,87 @@
     "tags": [],
     "created_at": "2025-09-19T10:17:23.069Z"
   },
-  "requests": []
+  "requests": [
+    {
+      "webhook_id": "6fd4341c",
+      "rid": "82ea3ed7-58e8-473c-bfd6-d680983e0c7b",
+      "time": "2025-09-19T10:22:50.087Z",
+      "ip": "::1",
+      "method": "POST",
+      "user_agent": "curl/8.5.0",
+      "headers": {
+        "host": "localhost:3000",
+        "user-agent": "curl/8.5.0",
+        "accept": "*/*",
+        "content-type": "application/json",
+        "content-length": "52"
+      },
+      "query": {},
+      "body": "{\"test\": \"data\", \"user\": \"john\", \"action\": \"create\"}",
+      "full_url": "http://localhost:3000/webhook/6fd4341c",
+      "path": "/webhook/6fd4341c",
+      "response_status": 200
+    },
+    {
+      "webhook_id": "6fd4341c",
+      "rid": "27a6bd60-443f-4a02-adf7-bf32b9166d75",
+      "time": "2025-09-19T10:22:57.363Z",
+      "ip": "::1",
+      "method": "GET",
+      "user_agent": "curl/8.5.0",
+      "headers": {
+        "host": "localhost:3000",
+        "user-agent": "curl/8.5.0",
+        "accept": "*/*"
+      },
+      "query": {
+        "param1": "value1"
+      },
+      "body": "",
+      "full_url": "http://localhost:3000/webhook/6fd4341c?param1=value1",
+      "path": "/webhook/6fd4341c?param1=value1",
+      "response_status": 200
+    },
+    {
+      "webhook_id": "6fd4341c",
+      "rid": "a90bca0f-b61d-45b7-8c68-3672c6f18f13",
+      "time": "2025-09-19T10:23:04.034Z",
+      "ip": "::1",
+      "method": "GET",
+      "user_agent": "TestBot/1.0",
+      "headers": {
+        "host": "localhost:3000",
+        "accept": "*/*",
+        "user-agent": "TestBot/1.0"
+      },
+      "query": {
+        "param1": "value1",
+        "param2": "value2"
+      },
+      "body": "",
+      "full_url": "http://localhost:3000/webhook/6fd4341c?param1=value1&param2=value2",
+      "path": "/webhook/6fd4341c?param1=value1&param2=value2",
+      "response_status": 200
+    },
+    {
+      "webhook_id": "6fd4341c",
+      "rid": "b81ddcf1-c781-4427-ac30-57c0ebabf485",
+      "time": "2025-09-19T10:23:22.121Z",
+      "ip": "::1",
+      "method": "PUT",
+      "user_agent": "curl/8.5.0",
+      "headers": {
+        "host": "localhost:3000",
+        "user-agent": "curl/8.5.0",
+        "accept": "*/*",
+        "content-type": "application/json",
+        "content-length": "64"
+      },
+      "query": {},
+      "body": "{\"name\": \"Alice\", \"email\": \"alice@example.com\", \"role\": \"admin\"}",
+      "full_url": "http://localhost:3000/webhook/6fd4341c",
+      "path": "/webhook/6fd4341c",
+      "response_status": 200
+    }
+  ]
 }

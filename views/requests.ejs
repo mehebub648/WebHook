@@ -4,29 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Requests for <%= webhookId %></title>
-<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" sizes="any" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" sizes="any" />
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/icons.css" />
   <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          keyframes: {
-            fadein: { '0%': {opacity:0, transform:'translateY(6px)'}, '100%': {opacity:1, transform:'translateY(0)'} },
-            scalein: { '0%': {opacity:0, transform:'scale(.96)'}, '100%': {opacity:1, transform:'scale(1)'} },
-          },
-          animation: { fadein:'fadein .25s ease-out', scalein:'scalein .2s ease-out' },
-          boxShadow: { soft: '0 2px 20px -4px rgba(2,6,23,.08)' }
-        }
-      }
-    }
-  </script>
-  <style>
-    .glass{backdrop-filter:blur(10px);background:rgba(255,255,255,.75)}
-    .chip{display:inline-flex;align-items:center;gap:.375rem;padding:.25rem .5rem;border-radius:.5rem;border:1px solid rgb(203 213 225);background-color:rgb(248 250 252)}
-    .codecard pre{max-height:40vh;overflow:auto}
-  </style>
-  <script>
+    // Global state for SPA-like functionality
+    let currentRequests = <%- JSON.stringify(requests) %>;
+    let currentSelectedRid = '<%= selectedRid %>';
+    let currentPage = 1;
+    const REQUESTS_PER_PAGE = 20;
+    let isLoading = false;
+
     function showToast(msg){
       const t = document.createElement('div');
       t.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-4 py-2 rounded-lg shadow-lg animate-fadein z-50';
@@ -35,6 +23,234 @@
       setTimeout(()=>{ t.classList.add('opacity-0','transition','duration-300'); }, 1200);
       setTimeout(()=>{ t.remove(); }, 1600);
     }
+
+    function showLoading() {
+      const indicator = document.getElementById('loadingIndicator');
+      if (indicator) {
+        indicator.classList.add('show');
+        isLoading = true;
+      }
+    }
+
+    function hideLoading() {
+      const indicator = document.getElementById('loadingIndicator');
+      if (indicator) {
+        indicator.classList.remove('show');
+        isLoading = false;
+      }
+    }
+
+    // Enhanced search that includes request body content
+    function performSearch(query) {
+      const items = Array.from(document.querySelectorAll('[data-req-item]'));
+      const q = query.toLowerCase().trim();
+      let visible = 0;
+      
+      items.forEach(item => {
+        if (!q) {
+          item.classList.remove('hidden');
+          visible++;
+          return;
+        }
+
+        const rid = item.getAttribute('data-rid');
+        const request = currentRequests.find(r => r.rid === rid);
+        
+        if (request) {
+          // Search in multiple fields including body content
+          const searchFields = [
+            request.method || '',
+            request.path || request.full_url || '',
+            String(request.response_status || ''),
+            request.body || '',
+            JSON.stringify(request.headers || {}),
+            JSON.stringify(request.query || {}),
+            request.user_agent || ''
+          ].join(' ').toLowerCase();
+          
+          const match = searchFields.includes(q);
+          item.classList.toggle('hidden', !match);
+          if (match) visible++;
+        }
+      });
+      
+      document.getElementById('reqCount').textContent = String(visible);
+    }
+
+    // SPA-style request selection without page refresh
+    function selectRequest(rid, updateHistory = true) {
+      if (isLoading) return;
+      
+      showLoading();
+      currentSelectedRid = rid;
+      
+      // Update visual selection
+      document.querySelectorAll('[data-req-item]').forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('data-rid') === rid) {
+          item.classList.add('active');
+          item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      });
+      
+      // Find the request data
+      const request = currentRequests.find(r => r.rid === rid);
+      if (request) {
+        renderRequestDetails(request);
+        
+        // Update URL without page refresh
+        if (updateHistory) {
+          const newUrl = `/request/<%= webhookId %>?rid=${encodeURIComponent(rid)}`;
+          history.pushState({ rid }, '', newUrl);
+        }
+      }
+      
+      hideLoading();
+    }
+
+    // Render request details in the main area
+    function renderRequestDetails(request) {
+      const mainSection = document.querySelector('section');
+      if (!mainSection) return;
+
+      const prettyHeaders = JSON.stringify(request.headers || {}, null, 2);
+      const prettyQuery = JSON.stringify(request.query || {}, null, 2);
+      let prettyBody = request.body || '';
+      try {
+        const decoded = JSON.parse(request.body);
+        prettyBody = JSON.stringify(decoded, null, 2);
+      } catch (e) { /* leave as-is */ }
+      
+      const respStatus = request.response_status || 200;
+      const requestTime = new Date(request.time).toISOString();
+      const ridSafe = (request.rid || 'req').replace(/[^a-zA-Z0-9_-]/g,'');
+
+      // Create the forwarding info section
+      let forwardingInfo = '';
+      if (request.proxied_status || request.proxy_error) {
+        forwardingInfo = `
+          <div class="mt-4 p-4 bg-slate-50 rounded-lg">
+            <h3 class="font-semibold text-slate-700 mb-2">
+              <i class="fa-solid fa-arrow-turn-up"></i> Forwarding Response
+            </h3>
+            ${request.proxied_status ? `
+              <div class="flex items-center gap-2 text-sm">
+                <span class="chip">Status: ${request.proxied_status}</span>
+                <span class="text-emerald-600"><i class="fa-solid fa-check"></i> Successfully forwarded</span>
+              </div>
+            ` : ''}
+            ${request.proxy_error ? `
+              <div class="text-sm text-red-600">
+                <i class="fa-solid fa-times"></i> Error: ${request.proxy_error}
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }
+
+      mainSection.innerHTML = `
+        <div class="flex items-start justify-between gap-3">
+          <h2 class="text-xl font-semibold">Request Details</h2>
+          <div class="flex items-center gap-2">
+            <div class="inline-flex items-center gap-1 text-xs text-slate-500">
+              <i class="fa-solid fa-clock"></i>
+              <span class="js-time" data-iso="${requestTime}">${new Date(requestTime).toLocaleString()}</span>
+            </div>
+            <div class="chip">
+              <i class="fa-solid fa-signal"></i> ${respStatus}
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+          <div class="space-y-4">
+            <div>
+              <h3 class="font-semibold text-slate-700 mb-2">Basic Info</h3>
+              <div class="bg-slate-50 p-3 rounded-lg space-y-2 text-sm">
+                <div class="flex justify-between">
+                  <span class="text-slate-600">Method:</span>
+                  <span class="chip font-mono">${request.method}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-600">Path:</span>
+                  <code class="text-slate-800 break-all">${request.path || request.full_url}</code>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-600">IP:</span>
+                  <code class="text-slate-800">${request.ip}</code>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-600">User Agent:</span>
+                  <span class="text-slate-600 text-xs break-all">${request.user_agent || 'N/A'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold text-slate-700">Headers</h3>
+                <button class="text-xs text-slate-500 hover:text-slate-700" data-copy-target="headers-${ridSafe}">
+                  <i class="fa-solid fa-copy"></i> Copy
+                </button>
+              </div>
+              <div class="codecard">
+                <pre id="headers-${ridSafe}">${prettyHeaders}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold text-slate-700">Query Parameters</h3>
+                <button class="text-xs text-slate-500 hover:text-slate-700" data-copy-target="query-${ridSafe}">
+                  <i class="fa-solid fa-copy"></i> Copy
+                </button>
+              </div>
+              <div class="codecard">
+                <pre id="query-${ridSafe}">${prettyQuery}</pre>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold text-slate-700">Request Body</h3>
+                <button class="text-xs text-slate-500 hover:text-slate-700" data-copy-target="body-${ridSafe}">
+                  <i class="fa-solid fa-copy"></i> Copy
+                </button>
+              </div>
+              <div class="codecard">
+                <pre id="body-${ridSafe}">${prettyBody}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        ${forwardingInfo}
+      `;
+
+      // Re-bind copy buttons
+      bindCopyButtons();
+    }
+
+    // Bind copy button functionality
+    function bindCopyButtons() {
+      document.querySelectorAll('[data-copy-target]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const pre = document.getElementById(btn.getAttribute('data-copy-target'));
+          if (!pre) return;
+          const text = pre.textContent || pre.innerText || '';
+          navigator.clipboard.writeText(text).then(() => showToast('Copied'));
+        });
+      });
+    }
+
+    // Handle browser back/forward
+    window.addEventListener('popstate', function(event) {
+      if (event.state && event.state.rid) {
+        selectRequest(event.state.rid, false);
+      }
+    });
 
     document.addEventListener('DOMContentLoaded', function(){
       // Render full origin URL for the webhook
@@ -46,44 +262,37 @@
         if (el) navigator.clipboard.writeText(el.textContent).then(()=> showToast('Copied URL'));
       });
 
-      // Locale-format all timestamps
-      document.querySelectorAll('.js-time').forEach(span=>{
-        const iso = span.getAttribute('data-iso');
-        if(iso){
-          try{ span.textContent = new Date(iso).toLocaleString(); }catch(_){}
-        }
-      });
-
-      // Copy buttons for code blocks
-      document.querySelectorAll('[data-copy-target]').forEach(btn=>{
-        btn.addEventListener('click', ()=>{
-          const pre = document.getElementById(btn.getAttribute('data-copy-target'));
-          if(!pre) return;
-          const text = pre.textContent || pre.innerText || '';
-          navigator.clipboard.writeText(text).then(()=> showToast('Copied'));
-        });
-      });
-
-      // Filter in sidebar
+      // Enhanced filter functionality
       const filter = document.getElementById('reqFilter');
-      const items = Array.from(document.querySelectorAll('[data-req-item]'));
-      filter?.addEventListener('input', ()=>{
-        const q = filter.value.toLowerCase().trim();
-        let visible = 0;
-        items.forEach(a=>{
-          const hay = (a.getAttribute('data-path')+' '+a.getAttribute('data-method')+' '+a.getAttribute('data-status')).toLowerCase();
-          const match = !q || hay.includes(q);
-          a.classList.toggle('hidden', !match);
-          if(match) visible++;
-        });
-        document.getElementById('reqCount').textContent = String(visible);
+      filter?.addEventListener('input', () => {
+        performSearch(filter.value);
       });
+
+      // Bind request item clicks for SPA navigation
+      document.querySelectorAll('[data-req-item]').forEach(item => {
+        item.addEventListener('click', function(e) {
+          e.preventDefault();
+          const rid = this.getAttribute('data-rid');
+          if (rid) {
+            selectRequest(rid);
+          }
+        });
+      });
+
+      // Initial request selection and active highlighting
+      if (currentSelectedRid) {
+        selectRequest(currentSelectedRid, false);
+      }
 
       // Ensure active item is visible
-      const active = document.querySelector('[data-req-item].bg-slate-50');
-      if(active){
-        active.scrollIntoView({ block:'nearest' });
+      const active = document.querySelector(`[data-req-item][data-rid="${currentSelectedRid}"]`);
+      if (active) {
+        active.classList.add('active');
+        active.scrollIntoView({ block: 'nearest' });
       }
+
+      // Bind copy buttons
+      bindCopyButtons();
     });
   </script>
 </head>
@@ -138,7 +347,7 @@
           <div class="mt-3">
             <label class="text-xs text-slate-600 mb-1 block">Filter</label>
             <div class="flex bg-white border border-slate-300 rounded-lg overflow-hidden">
-              <input id="reqFilter" type="text" placeholder="method, status, path…"
+              <input id="reqFilter" type="text" placeholder="search method, status, path, body content…"
                      class="w-full bg-transparent px-3 py-2 text-sm focus:outline-none" />
               <div class="px-3 grid place-items-center text-slate-500 border-l border-slate-300">
                 <i class="fa-solid fa-magnifying-glass"></i>
@@ -159,10 +368,11 @@
               const requestTime = new Date(request.time).toISOString();
             %>
               <a data-req-item
+                 data-rid="<%= request.rid %>"
                  data-path="<%= (request.path || request.full_url || '') %>"
                  data-method="<%= request.method %>"
                  data-status="<%= request.response_status || '' %>"
-                 class="block px-4 py-3 hover:bg-slate-50 transition <%= active ? '!bg-slate-50' : '' %>" 
+                 class="request-item block px-4 py-3 hover:bg-slate-50 transition <%= active ? 'active' : '' %>" 
                  href="/request/<%= encodeURIComponent(webhookId) %>?rid=<%= encodeURIComponent(request.rid) %>">
                 <div class="flex items-center gap-2 text-sm">
                   <span class="chip font-mono text-xs"><%= request.method %></span>
@@ -345,4 +555,10 @@
     } catch (e) { console.warn('Live init failed', e); }
   })();
 </script>
+
+<!-- Loading indicator -->
+<div id="loadingIndicator" class="loading-indicator">
+  <i class="fa-spinner fa-spin"></i> Loading...
+</div>
+
 </html>

@@ -1,0 +1,62 @@
+/* Fallback icons when FontAwesome CDN is blocked */
+
+.icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+  fill: currentColor;
+}
+
+/* Fallback text-based icons */
+.fa-link::before { content: "🔗"; }
+.fa-bolt::before { content: "⚡"; }
+.fa-shuffle::before { content: "🔀"; }
+.fa-eye::before { content: "👁"; }
+.fa-plus::before { content: "+"; }
+.fa-wand-magic-sparkles::before { content: "✨"; }
+.fa-arrow-left::before { content: "←"; }
+.fa-list::before { content: "📋"; }
+.fa-copy::before { content: "📋"; }
+.fa-trash::before { content: "🗑"; }
+.fa-xmark::before { content: "✕"; }
+.fa-exclamation-triangle::before { content: "⚠"; }
+.fa-sync::before { content: "🔄"; }
+.fa-signal::before { content: "📶"; }
+.fa-tag::before { content: "🏷"; }
+.fa-arrow-up-right-from-square::before { content: "↗"; }
+.fa-lightbulb::before { content: "💡"; }
+.fa-shield-halved::before { content: "🛡"; }
+.fa-circle-question::before { content: "❓"; }
+
+/* Common FontAwesome classes */
+.fa-solid, .fa-regular {
+  font-style: normal;
+  font-weight: normal;
+}
+
+/* Size classes */
+.fa-xs { font-size: 0.75em; }
+.fa-sm { font-size: 0.875em; }
+.fa-lg { font-size: 1.25em; }
+.fa-xl { font-size: 1.5em; }
+.fa-2x { font-size: 2em; }
+
+/* Utility classes for icons */
+.icon-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.icon-pulse {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

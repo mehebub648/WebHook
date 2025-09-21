@@ -4,22 +4,48 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Requests for <%= webhookId %></title>
-<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" sizes="any" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" sizes="any" />
+  
+  <!-- Fallback CSS for when CDN resources are blocked -->
+  <link rel="stylesheet" href="/fallback.css" />
+  <link rel="stylesheet" href="/icons.css" />
+  
+  <!-- CDN resources with error handling -->
   <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          keyframes: {
-            fadein: { '0%': {opacity:0, transform:'translateY(6px)'}, '100%': {opacity:1, transform:'translateY(0)'} },
-            scalein: { '0%': {opacity:0, transform:'scale(.96)'}, '100%': {opacity:1, transform:'scale(1)'} },
-          },
-          animation: { fadein:'fadein .25s ease-out', scalein:'scalein .2s ease-out' },
-          boxShadow: { soft: '0 2px 20px -4px rgba(2,6,23,.08)' }
-        }
+    // Load TailwindCSS with fallback
+    const tailwindScript = document.createElement('script');
+    tailwindScript.src = 'https://cdn.tailwindcss.com';
+    tailwindScript.onerror = function() {
+      console.log('TailwindCSS CDN blocked, using fallback styles');
+      document.body.classList.add('cdn-fallback');
+    };
+    tailwindScript.onload = function() {
+      // Configure Tailwind only if it loaded successfully
+      if (typeof tailwind !== 'undefined') {
+        tailwind.config = {
+          theme: {
+            extend: {
+              keyframes: {
+                fadein: { '0%': {opacity:0, transform:'translateY(6px)'}, '100%': {opacity:1, transform:'translateY(0)'} },
+                scalein: { '0%': {opacity:0, transform:'scale(.96)'}, '100%': {opacity:1, transform:'scale(1)'} },
+              },
+              animation: { fadein:'fadein .25s ease-out', scalein:'scalein .2s ease-out' },
+              boxShadow: { soft: '0 2px 20px -4px rgba(2,6,23,.08)' }
+            }
+          }
+        };
       }
-    }
+    };
+    document.head.appendChild(tailwindScript);
+    
+    // Load FontAwesome with fallback
+    const fontAwesome = document.createElement('link');
+    fontAwesome.rel = 'stylesheet';
+    fontAwesome.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css';
+    fontAwesome.onerror = function() {
+      console.log('FontAwesome CDN blocked, using fallback icons');
+    };
+    document.head.appendChild(fontAwesome);
   </script>
   <style>
     .glass{backdrop-filter:blur(10px);background:rgba(255,255,255,.75)}

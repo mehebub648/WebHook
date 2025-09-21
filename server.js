@@ -341,8 +341,8 @@ async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawB
     res.send(response.data); // Send original full response to client
     
     // Update request with comprehensive forwarded details
-    try {
-      await updateRequest(requestEntry.rid, {
+      try {
+        await updateRequest(requestEntry.rid, {
         proxied_status: response.status,
         response_status: response.status,
         forward_response_status: response.status,
@@ -356,13 +356,22 @@ async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawB
         forward_response_timestamp: forwardResponseTimestamp,
         forward_duration_ms: duration
       });
-      // Emit socket update for proxied status
+      // Emit socket update for proxied status including forwarding details
       try {
         app.emitRequestEvent(requestEntry.webhook_id, 'request:updated', { 
-          rid: requestEntry.rid, 
-          proxied_status: response.status, 
+          rid: requestEntry.rid,
+          proxied_status: response.status,
           response_status: response.status,
           forward_response_status: response.status,
+          forward_response_headers: response.headers,
+          // include request-side forward info so clients can update live
+          forward_request_url: forwardUrl,
+          forward_request_method: req.method,
+          forward_request_headers: headers,
+          forward_request_body: rawBody ? rawBody.toString('utf8') : '',
+          forward_response_body: responseBody,
+          forward_request_timestamp: forwardRequestTimestamp,
+          forward_response_timestamp: forwardResponseTimestamp,
           forward_duration_ms: duration
         });
       } catch (e) { /* ignore emit errors */ }
@@ -406,6 +415,12 @@ async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawB
           proxy_error: proxyError.message, 
           response_status: 502,
           forward_response_status: 502,
+          // include forward info for error case
+          forward_request_url: forwardUrl,
+          forward_request_method: req.method,
+          forward_request_headers: headers || {},
+          forward_request_body: rawBody ? rawBody.toString('utf8') : '',
+          forward_response_body: `Error: ${proxyError.message}`,
           forward_duration_ms: duration
         }); 
       } catch(e) { /* ignore emit errors */ }
@@ -479,8 +494,8 @@ async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody
     }
     
     // Update request with comprehensive background forward details
-    try {
-      await updateRequest(requestEntry.rid, {
+      try {
+        await updateRequest(requestEntry.rid, {
         proxied_status: response.status,
         background_forward: true,
         forward_response_status: response.status,
@@ -494,13 +509,21 @@ async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody
         forward_response_timestamp: forwardResponseTimestamp,
         forward_duration_ms: duration
       });
-      // Emit socket update for background forward status
+      // Emit socket update for background forward status including forwarding details
       try {
         app.emitRequestEvent(requestEntry.webhook_id, 'request:updated', { 
-          rid: requestEntry.rid, 
+          rid: requestEntry.rid,
           proxied_status: response.status,
           background_forward: true,
           forward_response_status: response.status,
+          forward_response_headers: response.headers,
+          forward_request_url: forwardUrl,
+          forward_request_method: req.method,
+          forward_request_headers: headers,
+          forward_request_body: rawBody ? rawBody.toString('utf8') : '',
+          forward_response_body: responseBody,
+          forward_request_timestamp: forwardRequestTimestamp,
+          forward_response_timestamp: forwardResponseTimestamp,
           forward_duration_ms: duration
         });
       } catch (e) { /* ignore emit errors */ }
@@ -544,6 +567,12 @@ async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody
           proxy_error: proxyError.message,
           background_forward: true,
           forward_response_status: 502,
+          // include forward info for error case
+          forward_request_url: forwardUrl,
+          forward_request_method: req.method,
+          forward_request_headers: headers || {},
+          forward_request_body: rawBody ? rawBody.toString('utf8') : '',
+          forward_response_body: `Error: ${proxyError.message}`,
           forward_duration_ms: duration
         }); 
       } catch(e) { /* ignore emit errors */ }

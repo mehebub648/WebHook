@@ -639,22 +639,40 @@
 
       socket.on('request:updated', (data)=>{
         try{
-          // Update any list item matching the rid by href query
           if(!data || !data.rid) return;
+
           const anchors = Array.from(document.querySelectorAll('[data-req-item]'));
           anchors.forEach(a=>{
             if(a.href && a.href.includes('rid=' + encodeURIComponent(data.rid))){
-              // update status badge inside
-              const badge = a.querySelector('.fa-signal') ? a.querySelector('.fa-signal').parentElement : null;
-              if(badge && data.response_status){ badge.innerHTML = `<i class="fa-solid fa-signal"></i>${data.response_status}`; }
+              // update main response status badge if present
+              const statusBadge = a.querySelector('.fa-signal') ? a.querySelector('.fa-signal').parentElement : null;
+              if(statusBadge && data.response_status){ statusBadge.innerHTML = `<i class="fa-solid fa-signal"></i>${data.response_status}`; }
+
+              // update or insert forward response badge when forwarding info is available
+              const fwdBadgeEl = a.querySelector('.fa-arrow-right') ? a.querySelector('.fa-arrow-right').parentElement : null;
+              if(data.forward_response_status !== undefined && data.forward_response_status !== null){
+                const fwdHtml = data.background_forward ?
+                  `<span class="inline-flex items-center gap-1 text-xs text-orange-600" title="Background Forward"><i class="fa-solid fa-arrow-right"></i>${data.forward_response_status}<i class="fa-solid fa-clock text-orange-500" title="Background"></i></span>` :
+                  `<span class="inline-flex items-center gap-1 text-xs text-blue-600" title="Synchronous Forward"><i class="fa-solid fa-arrow-right"></i>${data.forward_response_status}</span>`;
+
+                if(fwdBadgeEl){
+                  fwdBadgeEl.outerHTML = fwdHtml;
+                } else {
+                  // append after status badge
+                  try{
+                    if(statusBadge) statusBadge.insertAdjacentHTML('afterend', fwdHtml);
+                    else a.querySelector('div')?.insertAdjacentHTML('beforeend', fwdHtml);
+                  }catch(e){}
+                }
+              }
             }
           });
-          // If the detailed view is open for this rid, refresh page fragment (simple approach: reload page)
-          const selectedRid = '<%= selectedRid %>';
-          if(selectedRid && data.rid === selectedRid){
-            // Update response status chip in detail pane
-            const chip = document.querySelector('section .chip');
-            if(chip && data.response_status) chip.textContent = data.response_status;
+
+          // If the detailed view is open for this rid, refresh its data so forwarding details appear
+          const currentSelected = typeof currentSelectedRid !== 'undefined' ? currentSelectedRid : '<%= selectedRid %>';
+          if(currentSelected && data.rid === currentSelected){
+            // reload detailed fragment
+            try{ loadRequestDetails('<%= webhookId %>', data.rid); }catch(e){}
           }
         }catch(e){ }
       });

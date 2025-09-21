@@ -69,6 +69,24 @@ const requestSchema = new mongoose.Schema({
   background_forward: {
     type: Boolean,
     default: false
+  },
+  // Forward response fields
+  forward_response_status: {
+    type: Number
+  },
+  forward_response_headers: {
+    type: mongoose.Schema.Types.Mixed
+  },
+  forward_response_body: {
+    type: String
+  },
+  // Additional fields for webhook parameters
+  full_body: {
+    type: Boolean,
+    default: false
+  },
+  tag: {
+    type: String
   }
 });
 

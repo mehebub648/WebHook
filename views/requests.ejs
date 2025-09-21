@@ -79,7 +79,10 @@
           <div class="mt-6 border-t border-slate-200 pt-6">
             <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
               <i class="fa-solid fa-arrow-right text-blue-600"></i>
-              Forwarded Response Details
+              Forward Response Details
+              ${request.background_forward ? 
+                '<span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-orange-100 text-orange-700 text-sm font-medium"><i class="fa-solid fa-clock"></i>Background</span>' : 
+                '<span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-100 text-green-700 text-sm font-medium"><i class="fa-solid fa-sync"></i>Synchronous</span>'}
             </h3>
             <div class="grid md:grid-cols-2 gap-3">
               <!-- Forward Meta -->
@@ -87,7 +90,10 @@
                 <div class="grid grid-cols-[max-content,1fr] gap-x-4 gap-y-2 font-mono text-sm">
                   <div class="text-slate-500">Status</div><div class="font-semibold text-blue-700">${forwardStatus}</div>
                   <div class="text-slate-500">Forward URL</div><div class="break-all">${request.parsed_forward_url || 'N/A'}</div>
-                  ${request.background_forward ? '<div class="text-slate-500">Mode</div><div class="text-orange-600">Background</div>' : ''}
+                  ${request.background_forward ? 
+                    '<div class="text-slate-500">Mode</div><div class="text-orange-600 font-semibold">Background (Fire & Forget)</div><div class="text-slate-500">Info</div><div class="text-orange-600 text-xs">Request was processed in background without blocking the original response</div>' : 
+                    (request.parsed_forward_url ? '<div class="text-slate-500">Mode</div><div class="text-green-600 font-semibold">Synchronous (Wait for Response)</div><div class="text-slate-500">Info</div><div class="text-green-600 text-xs">Original response was the proxied response from the forward URL</div>' : '')}
+                  ${request.full_body ? '<div class="text-slate-500">Full Body</div><div class="text-blue-600">Enabled</div>' : ''}
                   ${request.proxy_error ? '<div class="text-slate-500">Error</div><div class="text-red-600 break-all">' + request.proxy_error + '</div>' : ''}
                 </div>
               </div>
@@ -126,6 +132,17 @@
         `;
       }
 
+      let forwardUrlSection = '';
+      if (request.parsed_forward_url) {
+        forwardUrlSection = `
+          <div class="text-slate-500">Forward URL</div><div class="break-all text-blue-600">${request.parsed_forward_url}</div>
+          <div class="text-slate-500">Forward Mode</div>
+          ${request.background_forward ? 
+            '<div class="inline-flex items-center gap-1 px-2 py-1 rounded bg-orange-50 text-orange-700 border border-orange-100 font-medium"><i class="fa-solid fa-clock"></i>Background</div>' : 
+            '<div class="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-50 text-green-700 border border-green-100 font-medium"><i class="fa-solid fa-sync"></i>Synchronous</div>'}
+        `;
+      }
+
       mainSection.innerHTML = `
         <div class="flex items-start justify-between gap-3">
           <h2 class="text-xl font-semibold">Request Details</h2>
@@ -145,6 +162,7 @@
               <div class="text-slate-500">Response</div><div>${respStatus}</div>
               <div class="text-slate-500">Full URL</div><div class="break-all">${request.full_url}</div>
               <div class="text-slate-500">User-Agent</div><div class="break-all">${request.user_agent}</div>
+              ${forwardUrlSection}
               ${tagSection}
             </div>
           </div>
@@ -343,20 +361,32 @@
             %>
               <a data-req-item
                  data-path="<%= (request.path || request.full_url || '') %>"
-                 data-method="<%= request.method %>"
+                 data-method="<%= request.method || 'N/A' %>"
                  data-status="<%= request.response_status || '' %>"
                  class="block px-4 py-3 hover:bg-slate-50 transition <%= active ? '!bg-slate-50' : '' %>" 
                  href="/request/<%= encodeURIComponent(webhookId) %>?rid=<%= encodeURIComponent(request.rid) %>">
                 <div class="flex items-center gap-2 text-sm">
-                  <span class="chip font-mono text-xs"><%= request.method %></span>
+                  <span class="chip font-mono text-xs"><%= request.method || 'N/A' %></span>
                   <span class="text-slate-500 font-mono text-xs js-time" data-iso="<%= requestTime %>"><%= requestTime %></span>
                   <% if (request.response_status) { %>
                     <span class="ml-auto inline-flex items-center gap-1 text-xs text-slate-500">
                       <i class="fa-solid fa-signal"></i><%= request.response_status %>
                     </span>
                   <% } %>
+                  <% if (request.forward_response_status) { %>
+                    <% if (request.background_forward) { %>
+                      <span class="inline-flex items-center gap-1 text-xs text-orange-600" title="Background Forward">
+                        <i class="fa-solid fa-arrow-right"></i><%= request.forward_response_status %>
+                        <i class="fa-solid fa-clock text-orange-500" title="Background"></i>
+                      </span>
+                    <% } else { %>
+                      <span class="inline-flex items-center gap-1 text-xs text-blue-600" title="Synchronous Forward">
+                        <i class="fa-solid fa-arrow-right"></i><%= request.forward_response_status %>
+                      </span>
+                    <% } %>
+                  <% } %>
                 </div>
-                <div class="font-mono text-slate-600 text-xs mt-1 break-all"><%= request.path || request.full_url %></div>
+                <div class="font-mono text-slate-600 text-xs mt-1 break-all"><%= request.path || request.full_url || 'N/A' %></div>
                 <% if (request.tag) { %>
                   <div class="mt-1">
                     <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-600 border border-yellow-100 text-xs">
@@ -417,11 +447,25 @@
             <div class="border border-slate-200 rounded-xl p-3 bg-slate-50">
               <div class="grid grid-cols-[max-content,1fr] gap-x-4 gap-y-2 font-mono text-sm">
                 <div class="text-slate-500">Time</div><div class="js-time" data-iso="<%= requestTime %>"><%= requestTime %></div>
-                <div class="text-slate-500">IP</div><div><%= selected.ip %></div>
-                <div class="text-slate-500">Method</div><div><%= selected.method %></div>
+                <div class="text-slate-500">IP</div><div><%= selected.ip || 'N/A' %></div>
+                <div class="text-slate-500">Method</div><div><%= selected.method || 'N/A' %></div>
                 <div class="text-slate-500">Response</div><div><%= respStatus %></div>
-                <div class="text-slate-500">Full URL</div><div class="break-all"><%= selected.full_url %></div>
-                <div class="text-slate-500">User-Agent</div><div class="break-all"><%= selected.user_agent %></div>
+                <div class="text-slate-500">Full URL</div><div class="break-all"><%= selected.full_url || 'N/A' %></div>
+                <div class="text-slate-500">User-Agent</div><div class="break-all"><%= selected.user_agent || 'N/A' %></div>
+                <% if (selected.parsed_forward_url) { %>
+                  <div class="text-slate-500">Forward URL</div><div class="break-all text-blue-600"><%= selected.parsed_forward_url %></div>
+                  <% if (selected.background_forward) { %>
+                    <div class="text-slate-500">Forward Mode</div>
+                    <div class="inline-flex items-center gap-1 px-2 py-1 rounded bg-orange-50 text-orange-700 border border-orange-100 font-medium">
+                      <i class="fa-solid fa-clock"></i>Background
+                    </div>
+                  <% } else { %>
+                    <div class="text-slate-500">Forward Mode</div>
+                    <div class="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-50 text-green-700 border border-green-100 font-medium">
+                      <i class="fa-solid fa-sync"></i>Synchronous
+                    </div>
+                  <% } %>
+                <% } %>
                 <% if (selected.tag) { %>
                   <div class="text-slate-500">Tag</div>
                   <div class="inline-flex items-center gap-1 px-2 py-1 rounded bg-yellow-50 text-yellow-700 border border-yellow-100 font-medium">
@@ -466,7 +510,16 @@
             <div class="mt-6 border-t border-slate-200 pt-6">
               <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
                 <i class="fa-solid fa-arrow-right text-blue-600"></i>
-                Forwarded Response Details
+                Forward Response Details
+                <% if (selected.background_forward) { %>
+                  <span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-orange-100 text-orange-700 text-sm font-medium">
+                    <i class="fa-solid fa-clock"></i>Background
+                  </span>
+                <% } else { %>
+                  <span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-100 text-green-700 text-sm font-medium">
+                    <i class="fa-solid fa-sync"></i>Synchronous
+                  </span>
+                <% } %>
               </h3>
               <div class="grid md:grid-cols-2 gap-3">
                 <!-- Forward Meta -->
@@ -475,7 +528,14 @@
                     <div class="text-slate-500">Status</div><div class="font-semibold text-blue-700"><%= selected.forward_response_status || 'N/A' %></div>
                     <div class="text-slate-500">Forward URL</div><div class="break-all"><%= selected.parsed_forward_url || 'N/A' %></div>
                     <% if (selected.background_forward) { %>
-                      <div class="text-slate-500">Mode</div><div class="text-orange-600">Background</div>
+                      <div class="text-slate-500">Mode</div><div class="text-orange-600 font-semibold">Background (Fire & Forget)</div>
+                      <div class="text-slate-500">Info</div><div class="text-orange-600 text-xs">Request was processed in background without blocking the original response</div>
+                    <% } else if (selected.parsed_forward_url) { %>
+                      <div class="text-slate-500">Mode</div><div class="text-green-600 font-semibold">Synchronous (Wait for Response)</div>
+                      <div class="text-slate-500">Info</div><div class="text-green-600 text-xs">Original response was the proxied response from the forward URL</div>
+                    <% } %>
+                    <% if (selected.full_body) { %>
+                      <div class="text-slate-500">Full Body</div><div class="text-blue-600">Enabled</div>
                     <% } %>
                     <% if (selected.proxy_error) { %>
                       <div class="text-slate-500">Error</div><div class="text-red-600 break-all"><%= selected.proxy_error %></div>
@@ -568,11 +628,16 @@
           
           a.innerHTML = `
             <div class="flex items-center gap-2 text-sm">
-              <span class="chip font-mono text-xs">${request.method || ''}</span>
+              <span class="chip font-mono text-xs">${request.method}</span>
               <span class="text-slate-500 font-mono text-xs js-time" data-iso="${requestTime}">${requestTime}</span>
               ${request.response_status ? `<span class="ml-auto inline-flex items-center gap-1 text-xs text-slate-500"><i class="fa-solid fa-signal"></i>${request.response_status}</span>` : ''}
+              ${request.forward_response_status ? 
+                (request.background_forward ? 
+                  `<span class="inline-flex items-center gap-1 text-xs text-orange-600" title="Background Forward"><i class="fa-solid fa-arrow-right"></i>${request.forward_response_status}<i class="fa-solid fa-clock text-orange-500" title="Background"></i></span>` : 
+                  `<span class="inline-flex items-center gap-1 text-xs text-blue-600" title="Synchronous Forward"><i class="fa-solid fa-arrow-right"></i>${request.forward_response_status}</span>`
+                ) : ''}
             </div>
-            <div class="font-mono text-slate-600 text-xs mt-1 break-all">${request.path || request.full_url || ''}</div>
+            <div class="font-mono text-slate-600 text-xs mt-1 break-all">${request.path || request.full_url}</div>
             ${tagHtml}
           `;
 

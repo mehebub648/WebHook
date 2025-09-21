@@ -746,7 +746,14 @@ app.all(/^\/webhook\/(.+)/, async (req, res) => {
       webhook_id: id,
       rid: uuidv4(),
       time: new Date(),
-      ip: req.ip || req.connection.remoteAddress || '',
+      ip: req.get('X-Forwarded-For')?.split(',')[0]?.trim() || 
+          req.get('X-Real-IP') || 
+          req.get('X-Client-IP') || 
+          req.ip || 
+          req.connection.remoteAddress || 
+          req.socket.remoteAddress || 
+          (req.connection.socket ? req.connection.socket.remoteAddress : null) || 
+          'unknown',
       method: req.method,
       user_agent: req.get('User-Agent') || '',
       headers: req.headers,
@@ -895,6 +902,13 @@ app.get('/api/request/:webhookId/:rid', async (req, res) => {
     
     const processedRequest = {
       ...request,
+      // Ensure undefined/null values have fallbacks
+      ip: request.ip || 'N/A',
+      method: request.method || 'N/A',
+      full_url: request.full_url || 'N/A',
+      user_agent: request.user_agent || 'N/A',
+      path: request.path || 'N/A',
+      // Pretty formatted data
       prettyHeaders,
       prettyQuery,
       prettyBody,

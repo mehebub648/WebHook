@@ -55,6 +55,20 @@ const requestSchema = new mongoose.Schema({
   },
   proxy_error: {
     type: String
+  },
+  // New fields for parsed URL parameters
+  parsed_response_status: {
+    type: Number
+  },
+  parsed_response_type: {
+    type: String
+  },
+  parsed_forward_url: {
+    type: String
+  },
+  background_forward: {
+    type: Boolean,
+    default: false
   }
 });
 

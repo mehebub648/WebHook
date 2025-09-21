@@ -62,111 +62,28 @@
       </div>
 
       <form method="post" action="/webhooks" class="p-5 space-y-4" id="create_form">
-        <!-- Row 1 -->
+        <!-- Label Input -->
         <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
-          <!-- Status -->
-          <div class="md:col-span-4">
-            <label class="text-xs font-medium text-slate-600 mb-1 block">Status</label>
-            <div class="flex bg-white border border-slate-300 rounded-lg overflow-hidden">
-              <select name="status" class="w-full appearance-none bg-transparent px-3 py-2 text-sm">
-                <% statusChoices.forEach(choice => { %>
-                  <option value="<%= choice %>"><%= choice %></option>
-                <% }); %>
-              </select>
-              <div class="px-3 grid place-items-center text-slate-500 border-l border-slate-300">
-                <i class="fa-solid fa-signal"></i>
-              </div>
-            </div>
-            <p class="mt-1 text-[11px] text-slate-500">HTTP code to respond with.</p>
-          </div>
-
-          <!-- Type -->
-          <div class="md:col-span-4">
-            <label class="text-xs font-medium text-slate-600 mb-1 block">Type</label>
-            <div class="flex bg-white border border-slate-300 rounded-lg overflow-hidden">
-              <select id="ctype" name="content_type" class="w-full appearance-none bg-transparent px-3 py-2 text-sm">
-                <option value="html">HTML</option>
-                <option value="json">JSON</option>
-                <option value="text">Plain</option>
-                <option value="xml">XML</option>
-                <option value="other">Other</option>
-              </select>
-              <div class="px-3 grid place-items-center text-slate-500 border-l border-slate-300">
-                <i class="fa-regular fa-file-code"></i>
-              </div>
-            </div>
-            <p class="mt-1 text-[11px] text-slate-500">Sets the <code class="font-mono">Content-Type</code> header.</p>
-          </div>
-
-          <!-- Label -->
-          <div class="md:col-span-4">
-            <label class="text-xs font-medium text-slate-600 mb-1 block">Label</label>
-            <div class="flex items-center gap-2 bg-white border border-slate-300 rounded-lg px-2 py-2 min-h-10">
+          <div class="md:col-span-6">
+            <label class="text-xs font-medium text-slate-600 mb-1 block">Label (optional)</label>
+            <div class="flex items-center gap-2 bg-white border border-slate-300 rounded-lg px-3 py-2 min-h-10">
               <input id="label_input" name="label" type="text" placeholder="e.g. Payment API"
                      class="flex-1 bg-transparent text-sm text-slate-700 placeholder-slate-400 focus:outline-none" />
+              <div class="text-slate-500">
+                <i class="fa-solid fa-tag"></i>
+              </div>
             </div>
             <p class="mt-1 text-[11px] text-slate-500">Optional. Only letters, numbers, space, underscore and hyphen allowed.</p>
           </div>
-        </div>
-
-        <!-- Row 2 -->
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
-          <div class="md:col-span-9">
-            <label class="text-xs font-medium text-slate-600 mb-1 block">Forward to (optional)</label>
-            <div class="flex bg-white border border-slate-300 rounded-lg overflow-hidden">
-              <input name="destination" type="url" placeholder="https://example.com/receive"
-                     class="w-full bg-transparent px-3 py-2 text-sm focus:outline-none" />
-              <div class="px-3 grid place-items-center text-slate-500 border-l border-slate-300 w-min">
-                <i class="fa-solid fa-arrow-turn-up"></i>
-              </div>
-            </div>
-            <p class="mt-1 text-[11px] text-slate-500">If set, requests are proxied to this URL and logged.</p>
-          </div>
-
-          <!-- Presets -->
-          <div class="md:col-span-3">
-            <label class="text-xs font-medium text-slate-600 mb-1 block">Quick preset</label>
-            <div class="flex bg-white border border-slate-300 rounded-lg overflow-hidden">
-              <select id="preset" class="w-full bg-transparent px-3 py-2 text-sm">
-                <option value="">None</option>
-                <option value='{"status":"200","type":"json"}'>200 • JSON</option>
-                <option value='{"status":"202","type":"text"}'>202 • Plain</option>
-                <option value='{"status":"500","type":"html"}'>500 • HTML</option>
-                <option value='{"status":"204","type":"other","ct":"application/problem+json"}'>204 • Custom</option>
-              </select>
-              <div class="px-3 grid place-items-center text-slate-500 border-l border-slate-300">
-                <i class="fa-solid fa-wand-magic-sparkles"></i>
-              </div>
-            </div>
-            <p class="mt-1 text-[11px] text-slate-500">Fills status/type instantly.</p>
-          </div>
-        </div>
-
-        <!-- Advanced -->
-        <div class="rounded-xl border border-slate-200 bg-slate-50/50">
-          <button type="button" id="adv_toggle"
-            class="w-full flex items-center justify-between px-4 py-2 text-sm text-slate-700">
-            <span class="inline-flex items-center gap-2"><i class="fa-solid fa-angles-down"></i> Advanced</span>
-            <span class="text-xs text-slate-500">Custom content-type</span>
-          </button>
-          <div id="adv_panel" class="px-4 pb-4 hidden">
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
-              <div class="md:col-span-6">
-                <label class="text-xs font-medium text-slate-600 mb-1 block">Custom C-Type</label>
-                <div id="custom_ct_wrap" class="flex bg-white border border-slate-300 rounded-lg overflow-hidden">
-                  <input id="custom_ct" name="custom_content_type" type="text"
-                         placeholder="application/problem+json"
-                         class="w-full bg-transparent px-3 py-2 text-sm focus:outline-none" />
-                  <div class="px-3 grid place-items-center text-slate-500 border-l border-slate-300 w-min">
-                    <i class="fa-solid fa-code-branch"></i>
-                  </div>
-                </div>
-                <p class="mt-1 text-[11px] text-slate-500">Only used when Type = Other.</p>
-              </div>
-              <div class="md:col-span-6 grid items-end">
-                <div class="text-[11px] text-slate-500">
-                  Tip: Keep JSON bodies small for instant mocks. Large payloads are fine but slower to preview.
-                </div>
+          
+          <div class="md:col-span-6 grid items-end">
+            <div class="text-[11px] text-slate-500 bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div class="font-medium text-blue-800 mb-1">📋 URL Parameter Guide:</div>
+              <div class="space-y-1 text-blue-700">
+                <div><code class="font-mono bg-blue-100 px-1 rounded">res:200json</code> - Response with status 200 and JSON</div>
+                <div><code class="font-mono bg-blue-100 px-1 rounded">res:404html</code> - Response with status 404 and HTML</div>
+                <div><code class="font-mono bg-blue-100 px-1 rounded">fwd:https://example.com</code> - Forward request</div>
+                <div class="text-xs">Example: <code class="font-mono bg-blue-100 px-1 rounded">/webhook/abc123/res:200json/fwd:https://site.com</code></div>
               </div>
             </div>
           </div>
@@ -176,9 +93,9 @@
         <div class="flex items-center gap-3 pt-1">
           <button type="submit"
             class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg shadow-sm transition active:scale-[.98]">
-            <i class="fa-solid fa-plus"></i> Add URL
+            <i class="fa-solid fa-plus"></i> Create Webhook URL
           </button>
-          <span class="text-xs text-slate-500">You can edit response body later on the detail page.</span>
+          <span class="text-xs text-slate-500">You'll get a URL that supports parameters for response types and forwarding.</span>
         </div>
       </form>
     </div>
@@ -225,27 +142,21 @@
             <div class="px-4 py-4">
               <div class="grid grid-cols-2 gap-4 items-start">
                 <div class="space-y-1">
-                  <div class="text-xs text-slate-500">Status</div>
-                  <div class="h-9 inline-flex items-center gap-2 px-2 py-1 rounded-md border border-slate-300 bg-slate-50 text-slate-700 text-sm">
-                    <i class="fa-solid fa-signal"></i><%= webhook.status %>
-                  </div>
-                </div>
-                <div class="space-y-1">
                   <div class="text-xs text-slate-500">Requests</div>
                   <div class="h-9 flex items-center font-mono text-slate-900"><%= webhook.request_count %></div>
                 </div>
-                <div class="col-span-2 space-y-1">
-                  <div class="text-xs text-slate-500">Content-Type</div>
-                  <div class="min-h-6 font-mono text-slate-900"><%= webhook.content_type %></div>
+                <div class="space-y-1">
+                  <div class="text-xs text-slate-500">Created</div>
+                  <div class="h-9 flex items-center text-slate-600 text-sm js-time" data-iso="<%= webhook.created_at %>"><%= webhook.created_at %></div>
                 </div>
                 <div class="col-span-2 space-y-1">
-                  <div class="text-xs text-slate-500">Forward To</div>
-                  <div class="min-h-12">
-                    <% if (webhook.destination) { %>
-                      <a href="<%= webhook.destination %>" target="_blank" rel="noopener noreferrer" class="font-mono text-sky-700 hover:underline break-all"><%= webhook.destination %></a>
-                    <% } else { %>
-                      <span class="text-slate-400 text-sm">—</span>
-                    <% } %>
+                  <div class="text-xs text-slate-500">URL Parameters</div>
+                  <div class="min-h-12 text-xs text-slate-600">
+                    <div class="space-y-1">
+                      <div><code class="bg-slate-100 px-1 rounded font-mono">res:200json</code> - JSON response with status 200</div>
+                      <div><code class="bg-slate-100 px-1 rounded font-mono">res:404html</code> - HTML response with status 404</div>
+                      <div><code class="bg-slate-100 px-1 rounded font-mono">fwd:https://site.com</code> - Forward to URL</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -361,7 +272,7 @@
         el.textContent = origin + '/' + el.getAttribute('data-href-rel').replace(/^\//,'');
       });
 
-      // Copy buttons
+      // Copy buttons for webhook URLs
       document.querySelectorAll('[data-copy]').forEach(btn=>{
         btn.addEventListener('click', ()=>{
           const target = document.getElementById(btn.getAttribute('data-copy'));
@@ -369,56 +280,7 @@
         });
       });
 
-      // Advanced accordion
-      const advToggle = document.getElementById('adv_toggle');
-      const advPanel  = document.getElementById('adv_panel');
-      if(advToggle && advPanel){
-        advToggle.addEventListener('click', ()=> advPanel.classList.toggle('hidden'));
-      }
-
-      // Preset filler
-      const presetSel = document.getElementById('preset');
-      const statusSel = document.querySelector('select[name="status"]');
-      const typeSel   = document.getElementById('ctype');
-      const customCt  = document.getElementById('custom_ct');
-
-      if(presetSel && statusSel && typeSel){
-        presetSel.addEventListener('change', ()=>{
-          if(!presetSel.value) return;
-          try{
-            const p = JSON.parse(presetSel.value);
-            if(p.status) statusSel.value = p.status;
-            if(p.type)   typeSel.value   = p.type;
-            if(p.ct){
-              if(advPanel) advPanel.classList.remove('hidden');
-              if(customCt) customCt.value = p.ct;
-            }
-            typeSel.dispatchEvent(new Event('change'));
-          }catch(_){}
-        });
-      }
-
-      // Auto-open Advanced when Type = Other and enable/require custom C-Type
-      function updateCustomCtState(){
-        if(!typeSel) return;
-        const isOther = typeSel.value === 'other';
-        if(advPanel){
-          if(isOther) advPanel.classList.remove('hidden');
-        }
-        if(customCt){
-          customCt.disabled = !isOther;
-          if(isOther){ customCt.setAttribute('required','required'); customCt.classList.remove('opacity-50'); }
-          else { customCt.removeAttribute('required'); customCt.classList.add('opacity-50'); }
-        }
-      }
-
-      if(typeSel){
-        typeSel.addEventListener('change', updateCustomCtState);
-        // initialize on load
-        updateCustomCtState();
-      }
-
-      // Modal wiring
+      // Modal wiring for deletion
       document.querySelectorAll('[data-open-delete]').forEach(btn=>{
         btn.addEventListener('click', ()=> modal.open(btn.getAttribute('data-open-delete'), btn.getAttribute('data-webhook-label')||''));
       });
@@ -434,63 +296,62 @@
         finally{ modal.close(); }
       });
 
-      // Form submit validation: require custom content-type when Type = other
+      // Form submit validation: simple label validation
       const createForm = document.getElementById('create_form');
       if(createForm){
         createForm.addEventListener('submit', function(e){
           try{
-            const typeVal = typeSel ? typeSel.value : null;
-            if(typeVal === 'other'){
-              const val = customCt ? customCt.value.trim() : '';
-              if(!val){
-                e.preventDefault();
-                showToast('Please enter a custom Content-Type for Type = Other');
-                if(customCt) { customCt.focus(); }
-                return false;
+            // Ensure label contains only a single value (split on comma)
+            const labelEl = document.getElementById('label_input');
+            if(labelEl){
+              const raw = labelEl.value || '';
+              if(raw.includes(',')){
+                // keep the first non-empty segment
+                const first = raw.split(',').map(s=>s.trim()).filter(Boolean)[0] || '';
+                labelEl.value = first;
+                showToast('Multiple labels not allowed — keeping first label');
               }
             }
-              // Ensure label contains only a single value (split on comma)
-              const labelEl = document.getElementById('label_input');
-              if(labelEl){
-                const raw = labelEl.value || '';
-                if(raw.includes(',')){
-                  // keep the first non-empty segment
-                  const first = raw.split(',').map(s=>s.trim()).filter(Boolean)[0] || '';
-                  labelEl.value = first;
-                  showToast('Multiple labels not allowed — keeping first label');
-                }
-              }
           }catch(_){ }
         });
       }
-        // Restrict label input to alphanumeric, space, underscore and hyphen
-        const labelInput = document.getElementById('label_input');
-        if(labelInput){
-          const allowedRe = /^[A-Za-z0-9 _-]$/;
-          labelInput.addEventListener('keydown', function(e){
-            // Allow control keys: backspace, delete, arrows, tab, enter
-            if(e.ctrlKey || e.metaKey || e.key.length > 1) return;
-            if(!allowedRe.test(e.key)){
-              e.preventDefault();
-              showToast('Only letters, numbers, space, underscore and hyphen allowed');
-            }
-          });
-          // Strip invalid chars on paste and insert only cleaned text (first valid segment)
-          labelInput.addEventListener('paste', function(e){
-            const paste = (e.clipboardData || window.clipboardData).getData('text') || '';
-            if(!paste) return;
+      
+      // Restrict label input to alphanumeric, space, underscore and hyphen
+      const labelInput = document.getElementById('label_input');
+      if(labelInput){
+        const allowedRe = /^[A-Za-z0-9 _-]$/;
+        labelInput.addEventListener('keydown', function(e){
+          // Allow control keys: backspace, delete, arrows, tab, enter
+          if(e.ctrlKey || e.metaKey || e.key.length > 1) return;
+          if(!allowedRe.test(e.key)){
             e.preventDefault();
-            // Keep only allowed characters and collapse multiple invalid separators
-            const cleaned = paste.split('').map(ch => allowedRe.test(ch) ? ch : '').join('');
-            // insert cleaned text at cursor
-            const start = labelInput.selectionStart || 0;
-            const end = labelInput.selectionEnd || 0;
-            const before = labelInput.value.slice(0, start);
-            const after = labelInput.value.slice(end);
-            labelInput.value = before + cleaned + after;
-            showToast('Pasted text cleaned to allowed characters');
-          });
+            showToast('Only letters, numbers, space, underscore and hyphen allowed');
+          }
+        });
+        // Strip invalid chars on paste and insert only cleaned text (first valid segment)
+        labelInput.addEventListener('paste', function(e){
+          const paste = (e.clipboardData || window.clipboardData).getData('text') || '';
+          if(!paste) return;
+          e.preventDefault();
+          // Keep only allowed characters and collapse multiple invalid separators
+          const cleaned = paste.split('').map(ch => allowedRe.test(ch) ? ch : '').join('');
+          // insert cleaned text at cursor
+          const start = labelInput.selectionStart || 0;
+          const end = labelInput.selectionEnd || 0;
+          const before = labelInput.value.slice(0, start);
+          const after = labelInput.value.slice(end);
+          labelInput.value = before + cleaned + after;
+          showToast('Pasted text cleaned to allowed characters');
+        });
+      }
+
+      // Locale-format all timestamps
+      document.querySelectorAll('.js-time').forEach(span=>{
+        const iso = span.getAttribute('data-iso');
+        if(iso){
+          try{ span.textContent = new Date(iso).toLocaleDateString(); }catch(_){}
         }
+      });
     });
   </script>
 </body>

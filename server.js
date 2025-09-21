@@ -110,6 +110,284 @@ function sanitizeId(id) {
   return sanitized === '' ? null : sanitized;
 }
 
+function parseWebhookPath(path) {
+  // Parse /webhook/<id>/res:<status><type>/fwd:<url> format
+  // Remove /webhook/ prefix
+  const cleanPath = path.replace(/^\/webhook\//, '');
+  
+  if (!cleanPath) {
+    return { id: null, error: 'Missing webhook ID' };
+  }
+  
+  // Find the first segment (ID) and then parse the rest as a single string
+  const firstSlash = cleanPath.indexOf('/');
+  let id, paramString;
+  
+  if (firstSlash === -1) {
+    // No parameters, just ID
+    id = sanitizeId(cleanPath);
+    paramString = '';
+  } else {
+    id = sanitizeId(cleanPath.substring(0, firstSlash));
+    paramString = cleanPath.substring(firstSlash + 1);
+  }
+  
+  if (!id) {
+    return { id: null, error: 'Invalid webhook ID' };
+  }
+  
+  const result = {
+    id,
+    responseStatus: null,
+    responseType: null,
+    forwardUrl: null,
+    error: null
+  };
+  
+  if (!paramString) {
+    return result; // No parameters
+  }
+  
+  // Parse parameters more carefully to handle URLs with slashes
+  // Look for res: pattern first
+  const resMatch = paramString.match(/(^|\/)(res:\d{3}(?:plain|json|html))(?=\/|$)/);
+  if (resMatch) {
+    const resParam = resMatch[2].substring(4); // Remove 'res:'
+    
+    // Parse status code and type (e.g., "404html", "200json")
+    const match = resParam.match(/^(\d{3})(plain|json|html)$/);
+    if (match) {
+      const [, status, type] = match;
+      result.responseStatus = parseInt(status, 10);
+      result.responseType = type;
+    } else {
+      result.error = `Invalid res parameter format: ${resMatch[2]}`;
+    }
+  }
+  
+  // Look for fwd: pattern - need to be more careful with URL parsing
+  const fwdMatch = paramString.match(/(^|\/)fwd:(https?:\/\/[^\s]+)/);
+  if (fwdMatch) {
+    let forwardUrl = fwdMatch[2];
+    
+    // The forward URL might extend to the end of the string or until the next parameter
+    // Find where this fwd parameter ends (either at end of string or before next known parameter)
+    const fwdStart = paramString.indexOf(fwdMatch[0]);
+    const fwdValueStart = fwdStart + fwdMatch[0].length - forwardUrl.length;
+    
+    // Look for the next parameter that starts with res: or another known pattern
+    const remainingString = paramString.substring(fwdValueStart);
+    const nextParamMatch = remainingString.match(/\/(res:\d{3}(?:plain|json|html))/);
+    
+    if (nextParamMatch) {
+      // There's another parameter after the fwd URL
+      forwardUrl = remainingString.substring(0, nextParamMatch.index);
+    } else {
+      // fwd URL extends to the end
+      forwardUrl = remainingString;
+    }
+    
+    try {
+      const url = new URL(forwardUrl);
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        result.forwardUrl = forwardUrl;
+      } else {
+        result.error = `Invalid forward URL protocol: ${forwardUrl}`;
+      }
+    } catch (e) {
+      result.error = `Invalid forward URL: ${forwardUrl}`;
+    }
+  }
+  
+  return result;
+}
+
+// Helper function to send immediate response based on type
+async function sendImmediateResponse(res, status, type, data) {
+  const { id, method, rawBody } = data;
+  
+  res.status(status);
+  
+  switch (type) {
+    case 'json':
+      res.set('Content-Type', 'application/json; charset=utf-8');
+      res.json({
+        ok: true,
+        id,
+        method,
+        response_status: status,
+        receivedBytes: rawBody.length
+      });
+      break;
+      
+    case 'html':
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Webhook ${id}</title></head><body><h1>Webhook ${id}</h1><p>Status: ${status}</p><p>Method: ${method}</p><p>Received: ${rawBody.length} bytes</p></body></html>`);
+      break;
+      
+    case 'plain':
+    default:
+      res.set('Content-Type', 'text/plain; charset=utf-8');
+      res.send(`ok=true\nid=${id}\nmethod=${method}\nstatus=${status}\nbytes=${rawBody.length}\n`);
+      break;
+  }
+}
+
+// Helper function to forward request and respond with forwarded response
+async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawBody) {
+  try {
+    // Prepare headers for proxying
+    const headers = { ...req.headers };
+    
+    // Remove hop-by-hop headers
+    delete headers.connection;
+    delete headers['keep-alive'];
+    delete headers['proxy-authenticate'];
+    delete headers['proxy-authorization'];
+    delete headers.te;
+    delete headers.trailers;
+    delete headers['transfer-encoding'];
+    delete headers.upgrade;
+    delete headers.host; // Let axios handle this
+    
+    const axiosConfig = {
+      method: req.method.toLowerCase(),
+      url: forwardUrl,
+      headers,
+      timeout: 30000,
+      responseType: 'stream'
+    };
+    
+    if (rawBody) {
+      axiosConfig.data = rawBody;
+    }
+    
+    const response = await axios(axiosConfig);
+    
+    // Stream response headers
+    Object.entries(response.headers).forEach(([key, value]) => {
+      res.set(key, value);
+    });
+    
+    res.status(response.status);
+    
+    // Stream response body
+    response.data.pipe(res);
+    
+    // Update request with forwarded status
+    try {
+      await updateRequest(requestEntry.rid, {
+        proxied_status: response.status,
+        response_status: response.status
+      });
+      // Emit socket update for proxied status
+      try {
+        app.emitRequestEvent(requestEntry.webhook_id, 'request:updated', { 
+          rid: requestEntry.rid, 
+          proxied_status: response.status, 
+          response_status: response.status 
+        });
+      } catch (e) { /* ignore emit errors */ }
+    } catch (error) {
+      console.warn('Failed to update request:', error.message);
+    }
+    
+  } catch (proxyError) {
+    console.error('Forward request error:', proxyError);
+    
+    // Update request with proxy error
+    try {
+      await updateRequest(requestEntry.rid, {
+        proxy_error: proxyError.message,
+        response_status: 502
+      });
+      try { 
+        app.emitRequestEvent(requestEntry.webhook_id, 'request:updated', { 
+          rid: requestEntry.rid, 
+          proxy_error: proxyError.message, 
+          response_status: 502 
+        }); 
+      } catch(e) { /* ignore emit errors */ }
+    } catch (error) {
+      console.warn('Failed to update request:', error.message);
+    }
+    
+    res.status(502)
+       .set('Content-Type', 'text/plain; charset=utf-8')
+       .send(`Upstream request failed: ${proxyError.message}\n`);
+  }
+}
+
+// Helper function to forward request in background (fire and forget)
+async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody) {
+  try {
+    // Prepare headers for proxying
+    const headers = { ...req.headers };
+    
+    // Remove hop-by-hop headers
+    delete headers.connection;
+    delete headers['keep-alive'];
+    delete headers['proxy-authenticate'];
+    delete headers['proxy-authorization'];
+    delete headers.te;
+    delete headers.trailers;
+    delete headers['transfer-encoding'];
+    delete headers.upgrade;
+    delete headers.host; // Let axios handle this
+    
+    const axiosConfig = {
+      method: req.method.toLowerCase(),
+      url: forwardUrl,
+      headers,
+      timeout: 30000
+    };
+    
+    if (rawBody) {
+      axiosConfig.data = rawBody;
+    }
+    
+    const response = await axios(axiosConfig);
+    
+    // Update request with background forward status
+    try {
+      await updateRequest(requestEntry.rid, {
+        proxied_status: response.status,
+        background_forward: true
+      });
+      // Emit socket update for background forward status
+      try {
+        app.emitRequestEvent(requestEntry.webhook_id, 'request:updated', { 
+          rid: requestEntry.rid, 
+          proxied_status: response.status,
+          background_forward: true
+        });
+      } catch (e) { /* ignore emit errors */ }
+    } catch (error) {
+      console.warn('Failed to update background forward request:', error.message);
+    }
+    
+  } catch (proxyError) {
+    console.error('Background forward error:', proxyError);
+    
+    // Update request with background proxy error
+    try {
+      await updateRequest(requestEntry.rid, {
+        proxy_error: proxyError.message,
+        background_forward: true
+      });
+      try { 
+        app.emitRequestEvent(requestEntry.webhook_id, 'request:updated', { 
+          rid: requestEntry.rid, 
+          proxy_error: proxyError.message,
+          background_forward: true
+        }); 
+      } catch(e) { /* ignore emit errors */ }
+    } catch (error) {
+      console.warn('Failed to update background forward request:', error.message);
+    }
+  }
+}
+
 function getNextLabel(existingWebhooks) {
   return `URL ${existingWebhooks.length + 1}`;
 }
@@ -295,8 +573,7 @@ app.get('/', async (req, res) => {
     );
 
     res.render('index', { 
-      webhooks: webhooksWithCounts,
-      statusChoices: [200, 201, 204, 301, 302, 400, 401, 403, 404, 409, 422, 429, 500, 502, 503]
+      webhooks: webhooksWithCounts
     });
   } catch (error) {
     console.error('Error loading webhooks:', error);
@@ -307,7 +584,7 @@ app.get('/', async (req, res) => {
 // Create webhook
 app.post('/webhooks', async (req, res) => {
   try {
-    const { status, content_type, destination, custom_content_type, label } = req.body;
+    const { label } = req.body;
     
     const webhooks = await findWebhooks();
     let id = generateId();
@@ -321,11 +598,7 @@ app.post('/webhooks', async (req, res) => {
       tries++;
     }
     
-    // Use provided label or generate default. If multiple comma-separated labels provided,
-    // keep only the first one to enforce a single label server-side as a fallback.
-    // Server-side sanitization: allow only letters, numbers, space, underscore and hyphen.
-    // Collapse runs of spaces to a single space. If input contains separators (like commas),
-    // we take the first meaningful segment after stripping disallowed characters.
+    // Use provided label or generate default
     function sanitizeLabelInput(rawLabel){
       if(!rawLabel || typeof rawLabel !== 'string') return '';
       // Replace disallowed characters with a space so segments separated by invalid chars split cleanly
@@ -344,53 +617,9 @@ app.post('/webhooks', async (req, res) => {
       }
     }
     
-    // Validate status
-    let validStatus = parseInt(status) || 200;
-    if (validStatus < 100 || validStatus > 599) {
-      validStatus = 200;
-    }
-    
-    // Determine content type
-    let contentType = 'text/html';
-    switch (content_type) {
-      case 'json':
-        contentType = 'application/json';
-        break;
-      case 'text':
-        contentType = 'text/plain';
-        break;
-      case 'xml':
-        contentType = 'application/xml';
-        break;
-      case 'other':
-        contentType = custom_content_type && custom_content_type.trim() !== '' 
-          ? custom_content_type.trim() 
-          : 'text/html';
-        break;
-      default:
-        contentType = 'text/html';
-    }
-    
-    // Validate destination URL
-    let validDestination = '';
-    if (destination && destination.trim() !== '') {
-      try {
-        const url = new URL(destination.trim());
-        if (url.protocol === 'http:' || url.protocol === 'https:') {
-          validDestination = destination.trim();
-        }
-      } catch (e) {
-        // Invalid URL, ignore
-      }
-    }
-    
     const webhookData = {
       id,
-      label: webhookLabel,
-      status: validStatus,
-      content_type: contentType,
-      destination: validDestination,
-      tags: [] // Keep tags as empty array for backward compatibility
+      label: webhookLabel
     };
     
     await saveWebhook(webhookData);
@@ -419,23 +648,32 @@ app.delete('/webhooks/:id', async (req, res) => {
   }
 });
 
-// Handle webhook requests
-app.all('/webhook/:id', async (req, res) => {
+// Handle webhook requests with dynamic parameters
+app.all(/^\/webhook\/(.+)/, async (req, res) => {
   try {
-    const id = sanitizeId(req.params.id);
-    if (!id) {
-      return res.status(400).send('Missing webhook id');
+    const fullPath = '/webhook/' + req.params[0];
+    const parsedPath = parseWebhookPath(fullPath);
+    
+    if (parsedPath.error || !parsedPath.id) {
+      return res.status(400).send(parsedPath.error || 'Invalid webhook URL');
     }
+    
+    const { id, responseStatus, responseType, forwardUrl } = parsedPath;
     
     // Get raw body (should be available as Buffer from express.raw middleware)
     const rawBody = req.body ? req.body.toString() : '';
     
     const webhook = await findWebhookById(id);
-    const status = webhook ? webhook.status : 200;
-    const contentType = webhook ? webhook.content_type : 'text/html';
-    const destination = webhook ? webhook.destination : '';
     
-    // Build request entry
+    // Determine response behavior
+    const hasResponseParams = responseStatus !== null && responseType !== null;
+    const hasForwardParams = forwardUrl !== null;
+    
+    // Default response if no parameters provided
+    const defaultStatus = 200;
+    const defaultType = 'json';
+    
+    // Build request entry with parsed parameters
     const requestEntry = {
       webhook_id: id,
       rid: uuidv4(),
@@ -448,118 +686,48 @@ app.all('/webhook/:id', async (req, res) => {
       body: rawBody,
       full_url: `${req.protocol}://${req.get('host')}${req.originalUrl}`,
       path: req.originalUrl,
-      response_status: status
+      response_status: hasResponseParams ? responseStatus : defaultStatus,
+      // Store parsed parameters for logging
+      parsed_response_status: responseStatus,
+      parsed_response_type: responseType,
+      parsed_forward_url: forwardUrl
     };
     
-    // Save request to database
+    // Save request to database first
     try {
       await saveRequest(requestEntry);
       // Emit socket event for new request (serialize Date to ISO)
       try {
-        const payload = Object.assign({}, requestEntry, { time: (requestEntry.time && requestEntry.time.toISOString) ? requestEntry.time.toISOString() : requestEntry.time });
+        const payload = Object.assign({}, requestEntry, { 
+          time: (requestEntry.time && requestEntry.time.toISOString) ? requestEntry.time.toISOString() : requestEntry.time 
+        });
         app.emitRequestEvent(id, 'request:new', payload);
       } catch (e) { /* ignore emit errors */ }
     } catch (error) {
       console.warn('Failed to save request:', error.message);
     }
     
-    // If destination is configured, proxy the request
-    if (destination && destination.trim() !== '') {
-      try {
-        // Prepare headers for proxying
-        const headers = { ...req.headers };
-        
-        // Remove hop-by-hop headers
-        delete headers.connection;
-        delete headers['keep-alive'];
-        delete headers['proxy-authenticate'];
-        delete headers['proxy-authorization'];
-        delete headers.te;
-        delete headers.trailers;
-        delete headers['transfer-encoding'];
-        delete headers.upgrade;
-        delete headers.host; // Let axios handle this
-        
-        // Build destination URL
-        let destUrl = destination;
-        if (destination.endsWith('/')) {
-          destUrl = destination.slice(0, -1) + req.originalUrl;
-        }
-        
-        const axiosConfig = {
-          method: req.method.toLowerCase(),
-          url: destUrl,
-          headers,
-          timeout: 30000,
-          responseType: 'stream'
-        };
-        
-        if (rawBody) {
-          axiosConfig.data = rawBody;
-        }
-        
-        const response = await axios(axiosConfig);
-        
-        // Stream response headers
-        Object.entries(response.headers).forEach(([key, value]) => {
-          res.set(key, value);
-        });
-        
-        res.status(response.status);
-        
-        // Stream response body
-        response.data.pipe(res);
-        
-        // Update request with proxied status
-        try {
-          await updateRequest(requestEntry.rid, {
-            proxied_status: response.status,
-            response_status: response.status
-          });
-          // Emit socket update for proxied status
-          try {
-            app.emitRequestEvent(id, 'request:updated', { rid: requestEntry.rid, proxied_status: response.status, response_status: response.status });
-          } catch (e) { }
-        } catch (error) {
-          console.warn('Failed to update request:', error.message);
-        }
-        
-      } catch (proxyError) {
-        console.error('Proxy error:', proxyError);
-        
-        // Update request with proxy error
-        try {
-          await updateRequest(requestEntry.rid, {
-            proxy_error: proxyError.message,
-            response_status: 502
-          });
-          try { app.emitRequestEvent(id, 'request:updated', { rid: requestEntry.rid, proxy_error: proxyError.message, response_status: 502 }); } catch(e){}
-        } catch (error) {
-          console.warn('Failed to update request:', error.message);
-        }
-        
-        res.status(502)
-           .set('Content-Type', 'text/plain; charset=utf-8')
-           .send(`Upstream request failed: ${proxyError.message}\n`);
-      }
-    } else {
-      // Default local response
-      res.status(status).set('Content-Type', `${contentType}; charset=utf-8`);
+    // Handle response logic based on parameters
+    if (hasResponseParams && hasForwardParams) {
+      // Both res: and fwd: provided - respond immediately with specified response
+      await sendImmediateResponse(res, responseStatus, responseType, { id, method: req.method, rawBody });
       
-      if (contentType.includes('json')) {
-        res.json({
-          ok: true,
-          id,
-          method: req.method,
-          response_status: status,
-          receivedBytes: rawBody.length
-        });
-      } else if (contentType.includes('html')) {
-        res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Webhook ${id}</title></head><body><h1>Webhook ${id}</h1><p>Status: ${status}</p></body></html>`);
-      } else {
-        res.send(`ok=true\nid=${id}\nmethod=${req.method}\nstatus=${status}\nbytes=${rawBody.length}\n`);
-      }
+      // Forward request in background (don't wait)
+      forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody);
+      
+    } else if (hasForwardParams && !hasResponseParams) {
+      // Only fwd: provided - forward and wait for response
+      await forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawBody);
+      
+    } else if (hasResponseParams && !hasForwardParams) {
+      // Only res: provided - respond immediately
+      await sendImmediateResponse(res, responseStatus, responseType, { id, method: req.method, rawBody });
+      
+    } else {
+      // No parameters - default response
+      await sendImmediateResponse(res, defaultStatus, defaultType, { id, method: req.method, rawBody });
     }
+    
   } catch (error) {
     console.error('Error in webhook handler:', error);
     res.status(500).send('Internal Server Error');

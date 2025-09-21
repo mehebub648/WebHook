@@ -9,27 +9,7 @@ const webhookSchema = new mongoose.Schema({
   },
   label: {
     type: String,
-    required: true
-  },
-  status: {
-    type: Number,
-    required: true,
-    min: 100,
-    max: 599,
-    default: 200
-  },
-  content_type: {
-    type: String,
-    required: true,
-    default: 'text/html'
-  },
-  destination: {
-    type: String,
     default: ''
-  },
-  tags: {
-    type: [String],
-    default: []
   },
   created_at: {
     type: Date,

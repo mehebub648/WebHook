@@ -111,7 +111,7 @@ function sanitizeId(id) {
 }
 
 function parseWebhookPath(path) {
-  // Parse /webhook/<id>/res:<status><type>/fwd:<url> format
+  // Parse /webhook/<id>/res:<status><type>/fwd:<url>/fullbody:true/tag:<string> format
   // Remove /webhook/ prefix
   const cleanPath = path.replace(/^\/webhook\//, '');
   
@@ -141,6 +141,8 @@ function parseWebhookPath(path) {
     responseStatus: null,
     responseType: null,
     forwardUrl: null,
+    fullBody: false,
+    tag: null,
     error: null
   };
   
@@ -165,6 +167,18 @@ function parseWebhookPath(path) {
     }
   }
   
+  // Look for fullbody parameter
+  const fullBodyMatch = paramString.match(/(^|\/)fullbody:true(?=\/|$)/);
+  if (fullBodyMatch) {
+    result.fullBody = true;
+  }
+  
+  // Look for tag parameter
+  const tagMatch = paramString.match(/(^|\/)tag:([^\/]+)(?=\/|$)/);
+  if (tagMatch) {
+    result.tag = decodeURIComponent(tagMatch[2]);
+  }
+  
   // Look for fwd: pattern - need to be more careful with URL parsing
   const fwdMatch = paramString.match(/(^|\/)fwd:(https?:\/\/[^\s]+)/);
   if (fwdMatch) {
@@ -175,9 +189,9 @@ function parseWebhookPath(path) {
     const fwdStart = paramString.indexOf(fwdMatch[0]);
     const fwdValueStart = fwdStart + fwdMatch[0].length - forwardUrl.length;
     
-    // Look for the next parameter that starts with res: or another known pattern
+    // Look for the next parameter that starts with res:, fullbody:, tag:, or another known pattern
     const remainingString = paramString.substring(fwdValueStart);
-    const nextParamMatch = remainingString.match(/\/(res:\d{3}(?:plain|json|html))/);
+    const nextParamMatch = remainingString.match(/\/(res:\d{3}(?:plain|json|html)|fullbody:true|tag:[^\/]+)/);
     
     if (nextParamMatch) {
       // There's another parameter after the fwd URL
@@ -234,7 +248,7 @@ async function sendImmediateResponse(res, status, type, data) {
 }
 
 // Helper function to forward request and respond with forwarded response
-async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawBody) {
+async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawBody, fullBody = false) {
   try {
     // Prepare headers for proxying
     const headers = { ...req.headers };
@@ -255,7 +269,7 @@ async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawB
       url: forwardUrl,
       headers,
       timeout: 30000,
-      responseType: 'stream'
+      responseType: 'text' // Get response as text to capture body
     };
     
     if (rawBody) {
@@ -264,28 +278,43 @@ async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawB
     
     const response = await axios(axiosConfig);
     
+    // Capture response details
+    let responseBody = response.data || '';
+    
+    // Truncate body if not fullBody and not JSON, and if it's too large
+    if (!fullBody && responseBody.length > 1000) {
+      const contentType = response.headers['content-type'] || '';
+      const isJson = contentType.includes('application/json');
+      
+      if (!isJson) {
+        responseBody = responseBody.substring(0, 1000) + '\n... [truncated, use /fullbody:true to see complete response]';
+      }
+    }
+    
     // Stream response headers
     Object.entries(response.headers).forEach(([key, value]) => {
       res.set(key, value);
     });
     
     res.status(response.status);
+    res.send(response.data); // Send original full response to client
     
-    // Stream response body
-    response.data.pipe(res);
-    
-    // Update request with forwarded status
+    // Update request with forwarded status and response details
     try {
       await updateRequest(requestEntry.rid, {
         proxied_status: response.status,
-        response_status: response.status
+        response_status: response.status,
+        forward_response_status: response.status,
+        forward_response_headers: response.headers,
+        forward_response_body: responseBody
       });
       // Emit socket update for proxied status
       try {
         app.emitRequestEvent(requestEntry.webhook_id, 'request:updated', { 
           rid: requestEntry.rid, 
           proxied_status: response.status, 
-          response_status: response.status 
+          response_status: response.status,
+          forward_response_status: response.status
         });
       } catch (e) { /* ignore emit errors */ }
     } catch (error) {
@@ -299,27 +328,38 @@ async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawB
     try {
       await updateRequest(requestEntry.rid, {
         proxy_error: proxyError.message,
-        response_status: 502
+        response_status: 502,
+        forward_response_status: 502,
+        forward_response_body: `Error: ${proxyError.message}`
       });
       try { 
         app.emitRequestEvent(requestEntry.webhook_id, 'request:updated', { 
           rid: requestEntry.rid, 
           proxy_error: proxyError.message, 
-          response_status: 502 
+          response_status: 502,
+          forward_response_status: 502
         }); 
       } catch(e) { /* ignore emit errors */ }
     } catch (error) {
       console.warn('Failed to update request:', error.message);
     }
     
+    // Return consistent JSON error response
     res.status(502)
-       .set('Content-Type', 'text/plain; charset=utf-8')
-       .send(`Upstream request failed: ${proxyError.message}\n`);
+       .set('Content-Type', 'application/json; charset=utf-8')
+       .json({
+         ok: false,
+         error: 'Upstream request failed',
+         message: proxyError.message,
+         id: requestEntry.webhook_id,
+         method: requestEntry.method,
+         status: 502
+       });
   }
 }
 
 // Helper function to forward request in background (fire and forget)
-async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody) {
+async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody, fullBody = false) {
   try {
     // Prepare headers for proxying
     const headers = { ...req.headers };
@@ -339,7 +379,8 @@ async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody
       method: req.method.toLowerCase(),
       url: forwardUrl,
       headers,
-      timeout: 30000
+      timeout: 30000,
+      responseType: 'text' // Get response as text to capture body
     };
     
     if (rawBody) {
@@ -348,18 +389,35 @@ async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody
     
     const response = await axios(axiosConfig);
     
-    // Update request with background forward status
+    // Capture response details
+    let responseBody = response.data || '';
+    
+    // Truncate body if not fullBody and not JSON, and if it's too large
+    if (!fullBody && responseBody.length > 1000) {
+      const contentType = response.headers['content-type'] || '';
+      const isJson = contentType.includes('application/json');
+      
+      if (!isJson) {
+        responseBody = responseBody.substring(0, 1000) + '\n... [truncated, use /fullbody:true to see complete response]';
+      }
+    }
+    
+    // Update request with background forward status and response details
     try {
       await updateRequest(requestEntry.rid, {
         proxied_status: response.status,
-        background_forward: true
+        background_forward: true,
+        forward_response_status: response.status,
+        forward_response_headers: response.headers,
+        forward_response_body: responseBody
       });
       // Emit socket update for background forward status
       try {
         app.emitRequestEvent(requestEntry.webhook_id, 'request:updated', { 
           rid: requestEntry.rid, 
           proxied_status: response.status,
-          background_forward: true
+          background_forward: true,
+          forward_response_status: response.status
         });
       } catch (e) { /* ignore emit errors */ }
     } catch (error) {
@@ -373,13 +431,16 @@ async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody
     try {
       await updateRequest(requestEntry.rid, {
         proxy_error: proxyError.message,
-        background_forward: true
+        background_forward: true,
+        forward_response_status: 502,
+        forward_response_body: `Error: ${proxyError.message}`
       });
       try { 
         app.emitRequestEvent(requestEntry.webhook_id, 'request:updated', { 
           rid: requestEntry.rid, 
           proxy_error: proxyError.message,
-          background_forward: true
+          background_forward: true,
+          forward_response_status: 502
         }); 
       } catch(e) { /* ignore emit errors */ }
     } catch (error) {
@@ -655,10 +716,17 @@ app.all(/^\/webhook\/(.+)/, async (req, res) => {
     const parsedPath = parseWebhookPath(fullPath);
     
     if (parsedPath.error || !parsedPath.id) {
-      return res.status(400).send(parsedPath.error || 'Invalid webhook URL');
+      return res.status(400)
+        .set('Content-Type', 'application/json; charset=utf-8')
+        .json({
+          ok: false,
+          error: 'Invalid webhook URL',
+          message: parsedPath.error || 'Invalid webhook URL format',
+          status: 400
+        });
     }
     
-    const { id, responseStatus, responseType, forwardUrl } = parsedPath;
+    const { id, responseStatus, responseType, forwardUrl, fullBody, tag } = parsedPath;
     
     // Get raw body (should be available as Buffer from express.raw middleware)
     const rawBody = req.body ? req.body.toString() : '';
@@ -690,7 +758,13 @@ app.all(/^\/webhook\/(.+)/, async (req, res) => {
       // Store parsed parameters for logging
       parsed_response_status: responseStatus,
       parsed_response_type: responseType,
-      parsed_forward_url: forwardUrl
+      parsed_forward_url: forwardUrl,
+      full_body: fullBody,
+      tag: tag,
+      // Initialize forward response fields
+      forward_response_status: null,
+      forward_response_headers: null,
+      forward_response_body: null
     };
     
     // Save request to database first
@@ -713,11 +787,11 @@ app.all(/^\/webhook\/(.+)/, async (req, res) => {
       await sendImmediateResponse(res, responseStatus, responseType, { id, method: req.method, rawBody });
       
       // Forward request in background (don't wait)
-      forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody);
+      forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody, fullBody);
       
     } else if (hasForwardParams && !hasResponseParams) {
       // Only fwd: provided - forward and wait for response
-      await forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawBody);
+      await forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawBody, fullBody);
       
     } else if (hasResponseParams && !hasForwardParams) {
       // Only res: provided - respond immediately
@@ -730,7 +804,14 @@ app.all(/^\/webhook\/(.+)/, async (req, res) => {
     
   } catch (error) {
     console.error('Error in webhook handler:', error);
-    res.status(500).send('Internal Server Error');
+    res.status(500)
+      .set('Content-Type', 'application/json; charset=utf-8')
+      .json({
+        ok: false,
+        error: 'Internal Server Error',
+        message: error.message,
+        status: 500
+      });
   }
 });
 
@@ -768,6 +849,65 @@ app.get('/request/:id', async (req, res) => {
   } catch (error) {
     console.error('Error loading requests:', error);
     res.status(500).send('Internal Server Error');
+  }
+});
+
+// API endpoint to fetch individual request details (for AJAX)
+app.get('/api/request/:webhookId/:rid', async (req, res) => {
+  try {
+    const webhookId = sanitizeId(req.params.webhookId);
+    const rid = req.params.rid;
+    
+    if (!webhookId || !rid) {
+      return res.status(400).json({ error: 'Invalid webhook ID or request ID' });
+    }
+    
+    const requests = await findRequests(webhookId);
+    const request = requests.find(r => r.rid === rid);
+    
+    if (!request) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+    
+    // Process the request data for display
+    const prettyHeaders = JSON.stringify(request.headers || {}, null, 2);
+    const prettyQuery = JSON.stringify(request.query || {}, null, 2);
+    let prettyBody = request.body || '';
+    try {
+      const decoded = JSON.parse(request.body);
+      prettyBody = JSON.stringify(decoded, null, 2);
+    } catch (e) { /* leave as-is */ }
+    
+    // Process forward response data if available
+    let prettyForwardHeaders = '';
+    let prettyForwardBody = '';
+    if (request.forward_response_headers) {
+      prettyForwardHeaders = JSON.stringify(request.forward_response_headers, null, 2);
+    }
+    if (request.forward_response_body) {
+      try {
+        const decoded = JSON.parse(request.forward_response_body);
+        prettyForwardBody = JSON.stringify(decoded, null, 2);
+      } catch (e) {
+        prettyForwardBody = request.forward_response_body;
+      }
+    }
+    
+    const processedRequest = {
+      ...request,
+      prettyHeaders,
+      prettyQuery,
+      prettyBody,
+      prettyForwardHeaders,
+      prettyForwardBody,
+      requestTime: new Date(request.time).toISOString(),
+      ridSafe: (request.rid || 'req').replace(/[^a-zA-Z0-9_-]/g,'')
+    };
+    
+    res.json(processedRequest);
+  } catch (error) {
+    console.error('Error fetching request details:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 

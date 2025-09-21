@@ -36,6 +36,168 @@
       setTimeout(()=>{ t.remove(); }, 1600);
     }
 
+    let currentSelectedRid = '<%= selectedRid %>';
+
+    function formatISO(iso) {
+      try { 
+        return new Date(iso).toLocaleString(); 
+      } catch(e) { 
+        return iso; 
+      }
+    }
+
+    async function loadRequestDetails(webhookId, rid) {
+      try {
+        const response = await fetch(`/api/request/${encodeURIComponent(webhookId)}/${encodeURIComponent(rid)}`);
+        if (!response.ok) {
+          throw new Error('Failed to load request details');
+        }
+        const data = await response.json();
+        updateRequestDetailsView(data);
+        currentSelectedRid = rid;
+      } catch (error) {
+        console.error('Error loading request details:', error);
+        showToast('Failed to load request details');
+      }
+    }
+
+    function updateRequestDetailsView(request) {
+      const mainSection = document.querySelector('main section');
+      if (!mainSection) return;
+
+      const respStatus = request.response_status || 200;
+      const requestTime = request.requestTime;
+      const ridSafe = request.ridSafe;
+
+      let forwardResponseSection = '';
+      if (request.forward_response_status || request.forward_response_headers || request.forward_response_body) {
+        const forwardHeaders = request.prettyForwardHeaders || '{}';
+        const forwardBody = request.prettyForwardBody || '';
+        const forwardStatus = request.forward_response_status || 'N/A';
+        
+        forwardResponseSection = `
+          <div class="mt-6 border-t border-slate-200 pt-6">
+            <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+              <i class="fa-solid fa-arrow-right text-blue-600"></i>
+              Forwarded Response Details
+            </h3>
+            <div class="grid md:grid-cols-2 gap-3">
+              <!-- Forward Meta -->
+              <div class="border border-slate-200 rounded-xl p-3 bg-blue-50">
+                <div class="grid grid-cols-[max-content,1fr] gap-x-4 gap-y-2 font-mono text-sm">
+                  <div class="text-slate-500">Status</div><div class="font-semibold text-blue-700">${forwardStatus}</div>
+                  <div class="text-slate-500">Forward URL</div><div class="break-all">${request.parsed_forward_url || 'N/A'}</div>
+                  ${request.background_forward ? '<div class="text-slate-500">Mode</div><div class="text-orange-600">Background</div>' : ''}
+                  ${request.proxy_error ? '<div class="text-slate-500">Error</div><div class="text-red-600 break-all">' + request.proxy_error + '</div>' : ''}
+                </div>
+              </div>
+
+              <!-- Forward Response Headers -->
+              <div class="border border-slate-200 rounded-xl p-3 bg-blue-50 codecard">
+                <div class="flex items-center justify-between">
+                  <div class="text-slate-500 text-sm">Response Headers</div>
+                  <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                          data-copy-target="fwd-hdr-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
+                </div>
+                <pre id="fwd-hdr-${ridSafe}" class="whitespace-pre-wrap break-all font-mono text-sm mt-1">${forwardHeaders}</pre>
+              </div>
+
+              <!-- Forward Response Body -->
+              <div class="border border-slate-200 rounded-xl p-3 bg-blue-50 md:col-span-2 codecard">
+                <div class="flex items-center justify-between">
+                  <div class="text-slate-500 text-sm">Response Body</div>
+                  <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                          data-copy-target="fwd-body-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
+                </div>
+                <pre id="fwd-body-${ridSafe}" class="whitespace-pre-wrap break-all font-mono text-sm mt-1">${forwardBody}</pre>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      let tagSection = '';
+      if (request.tag) {
+        tagSection = `
+          <div class="text-slate-500">Tag</div>
+          <div class="inline-flex items-center gap-1 px-2 py-1 rounded bg-yellow-50 text-yellow-700 border border-yellow-100 font-medium">
+            <i class="fa-solid fa-tag"></i>${request.tag}
+          </div>
+        `;
+      }
+
+      mainSection.innerHTML = `
+        <div class="flex items-start justify-between gap-3">
+          <h2 class="text-xl font-semibold">Request Details</h2>
+          <div class="flex items-center gap-2">
+            <span class="chip text-xs"><i class="fa-solid fa-signal"></i> ${respStatus}</span>
+            <span class="chip text-xs font-mono">${request.method}</span>
+          </div>
+        </div>
+
+        <div class="mt-3 grid md:grid-cols-2 gap-3">
+          <!-- Meta -->
+          <div class="border border-slate-200 rounded-xl p-3 bg-slate-50">
+            <div class="grid grid-cols-[max-content,1fr] gap-x-4 gap-y-2 font-mono text-sm">
+              <div class="text-slate-500">Time</div><div>${formatISO(requestTime)}</div>
+              <div class="text-slate-500">IP</div><div>${request.ip}</div>
+              <div class="text-slate-500">Method</div><div>${request.method}</div>
+              <div class="text-slate-500">Response</div><div>${respStatus}</div>
+              <div class="text-slate-500">Full URL</div><div class="break-all">${request.full_url}</div>
+              <div class="text-slate-500">User-Agent</div><div class="break-all">${request.user_agent}</div>
+              ${tagSection}
+            </div>
+          </div>
+
+          <!-- Headers -->
+          <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 codecard">
+            <div class="flex items-center justify-between">
+              <div class="text-slate-500 text-sm">Headers</div>
+              <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                      data-copy-target="hdr-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
+            </div>
+            <pre id="hdr-${ridSafe}" class="whitespace-pre-wrap break-all font-mono text-sm mt-1">${request.prettyHeaders}</pre>
+          </div>
+
+          <!-- Query -->
+          <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 md:col-span-2 codecard">
+            <div class="flex items-center justify-between">
+              <div class="text-slate-500 text-sm">Query Params</div>
+              <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                      data-copy-target="qry-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
+            </div>
+            <pre id="qry-${ridSafe}" class="whitespace-pre-wrap break-all font-mono text-sm mt-1">${request.prettyQuery}</pre>
+          </div>
+
+          <!-- Body -->
+          <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 md:col-span-2 codecard">
+            <div class="flex items-center justify-between">
+              <div class="text-slate-500 text-sm">Request Body</div>
+              <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                      data-copy-target="body-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
+            </div>
+            <pre id="body-${ridSafe}" class="whitespace-pre-wrap break-all font-mono text-sm mt-1">${request.prettyBody}</pre>
+          </div>
+        </div>
+
+        ${forwardResponseSection}
+      `;
+
+      // Re-attach copy button event listeners
+      attachCopyEventListeners();
+    }
+
+    function attachCopyEventListeners() {
+      document.querySelectorAll('[data-copy-target]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const pre = document.getElementById(btn.getAttribute('data-copy-target'));
+          if(!pre) return;
+          const text = pre.textContent || pre.innerText || '';
+          navigator.clipboard.writeText(text).then(()=> showToast('Copied'));
+        });
+      });
+    }
+
     document.addEventListener('DOMContentLoaded', function(){
       // Render full origin URL for the webhook
       const origin = window.location.origin.replace(/\/$/, '');
@@ -55,13 +217,34 @@
       });
 
       // Copy buttons for code blocks
-      document.querySelectorAll('[data-copy-target]').forEach(btn=>{
-        btn.addEventListener('click', ()=>{
-          const pre = document.getElementById(btn.getAttribute('data-copy-target'));
-          if(!pre) return;
-          const text = pre.textContent || pre.innerText || '';
-          navigator.clipboard.writeText(text).then(()=> showToast('Copied'));
+      attachCopyEventListeners();
+
+      // Handle request selection clicks
+      document.addEventListener('click', function(e) {
+        const requestItem = e.target.closest('[data-req-item]');
+        if (!requestItem) return;
+        
+        e.preventDefault();
+        
+        // Extract webhook ID and request ID from href
+        const href = requestItem.getAttribute('href');
+        const match = href.match(/\/request\/([^?]+)\?rid=(.+)/);
+        if (!match) return;
+        
+        const webhookId = decodeURIComponent(match[1]);
+        const rid = decodeURIComponent(match[2]);
+        
+        // Update URL without page reload
+        window.history.pushState({}, '', href);
+        
+        // Update active state
+        document.querySelectorAll('[data-req-item]').forEach(item => {
+          item.classList.remove('bg-slate-50', '!bg-slate-50');
         });
+        requestItem.classList.add('!bg-slate-50');
+        
+        // Load request details
+        loadRequestDetails(webhookId, rid);
       });
 
       // Filter in sidebar
@@ -174,6 +357,13 @@
                   <% } %>
                 </div>
                 <div class="font-mono text-slate-600 text-xs mt-1 break-all"><%= request.path || request.full_url %></div>
+                <% if (request.tag) { %>
+                  <div class="mt-1">
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-600 border border-yellow-100 text-xs">
+                      <i class="fa-solid fa-tag"></i><%= request.tag %>
+                    </span>
+                  </div>
+                <% } %>
               </a>
             <% }); %>
           <% } %>
@@ -193,6 +383,22 @@
               const decoded = JSON.parse(selected.body);
               prettyBody = JSON.stringify(decoded, null, 2);
             } catch (e) { /* leave as-is */ }
+            
+            // Process forward response data if available
+            let prettyForwardHeaders = '';
+            let prettyForwardBody = '';
+            if (selected.forward_response_headers) {
+              prettyForwardHeaders = JSON.stringify(selected.forward_response_headers, null, 2);
+            }
+            if (selected.forward_response_body) {
+              try {
+                const decoded = JSON.parse(selected.forward_response_body);
+                prettyForwardBody = JSON.stringify(decoded, null, 2);
+              } catch (e) {
+                prettyForwardBody = selected.forward_response_body;
+              }
+            }
+            
             const respStatus = selected.response_status || 200;
             const requestTime = new Date(selected.time).toISOString();
             const ridSafe = (selected.rid || 'req').replace(/[^a-zA-Z0-9_-]/g,'');
@@ -216,6 +422,12 @@
                 <div class="text-slate-500">Response</div><div><%= respStatus %></div>
                 <div class="text-slate-500">Full URL</div><div class="break-all"><%= selected.full_url %></div>
                 <div class="text-slate-500">User-Agent</div><div class="break-all"><%= selected.user_agent %></div>
+                <% if (selected.tag) { %>
+                  <div class="text-slate-500">Tag</div>
+                  <div class="inline-flex items-center gap-1 px-2 py-1 rounded bg-yellow-50 text-yellow-700 border border-yellow-100 font-medium">
+                    <i class="fa-solid fa-tag"></i><%= selected.tag %>
+                  </div>
+                <% } %>
               </div>
             </div>
 
@@ -242,13 +454,57 @@
             <!-- Body -->
             <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 md:col-span-2 codecard">
               <div class="flex items-center justify-between">
-                <div class="text-slate-500 text-sm">Body</div>
+                <div class="text-slate-500 text-sm">Request Body</div>
                 <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
                         data-copy-target="body-<%= ridSafe %>"><i class="fa-regular fa-copy"></i> Copy</button>
               </div>
               <pre id="body-<%= ridSafe %>" class="whitespace-pre-wrap break-all font-mono text-sm mt-1"><%= prettyBody %></pre>
             </div>
           </div>
+
+          <% if (selected.forward_response_status || selected.forward_response_headers || selected.forward_response_body) { %>
+            <div class="mt-6 border-t border-slate-200 pt-6">
+              <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+                <i class="fa-solid fa-arrow-right text-blue-600"></i>
+                Forwarded Response Details
+              </h3>
+              <div class="grid md:grid-cols-2 gap-3">
+                <!-- Forward Meta -->
+                <div class="border border-slate-200 rounded-xl p-3 bg-blue-50">
+                  <div class="grid grid-cols-[max-content,1fr] gap-x-4 gap-y-2 font-mono text-sm">
+                    <div class="text-slate-500">Status</div><div class="font-semibold text-blue-700"><%= selected.forward_response_status || 'N/A' %></div>
+                    <div class="text-slate-500">Forward URL</div><div class="break-all"><%= selected.parsed_forward_url || 'N/A' %></div>
+                    <% if (selected.background_forward) { %>
+                      <div class="text-slate-500">Mode</div><div class="text-orange-600">Background</div>
+                    <% } %>
+                    <% if (selected.proxy_error) { %>
+                      <div class="text-slate-500">Error</div><div class="text-red-600 break-all"><%= selected.proxy_error %></div>
+                    <% } %>
+                  </div>
+                </div>
+
+                <!-- Forward Response Headers -->
+                <div class="border border-slate-200 rounded-xl p-3 bg-blue-50 codecard">
+                  <div class="flex items-center justify-between">
+                    <div class="text-slate-500 text-sm">Response Headers</div>
+                    <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                            data-copy-target="fwd-hdr-<%= ridSafe %>"><i class="fa-regular fa-copy"></i> Copy</button>
+                  </div>
+                  <pre id="fwd-hdr-<%= ridSafe %>" class="whitespace-pre-wrap break-all font-mono text-sm mt-1"><%= prettyForwardHeaders %></pre>
+                </div>
+
+                <!-- Forward Response Body -->
+                <div class="border border-slate-200 rounded-xl p-3 bg-blue-50 md:col-span-2 codecard">
+                  <div class="flex items-center justify-between">
+                    <div class="text-slate-500 text-sm">Response Body</div>
+                    <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                            data-copy-target="fwd-body-<%= ridSafe %>"><i class="fa-regular fa-copy"></i> Copy</button>
+                  </div>
+                  <pre id="fwd-body-<%= ridSafe %>" class="whitespace-pre-wrap break-all font-mono text-sm mt-1"><%= prettyForwardBody %></pre>
+                </div>
+              </div>
+            </div>
+          <% } %>
         <% } %>
       </section>
     </div>
@@ -298,6 +554,18 @@
           a.className = 'block px-4 py-3 hover:bg-slate-50 transition';
 
           const requestTime = formatISO(request.time || new Date());
+          
+          let tagHtml = '';
+          if (request.tag) {
+            tagHtml = `
+              <div class="mt-1">
+                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-600 border border-yellow-100 text-xs">
+                  <i class="fa-solid fa-tag"></i>${request.tag}
+                </span>
+              </div>
+            `;
+          }
+          
           a.innerHTML = `
             <div class="flex items-center gap-2 text-sm">
               <span class="chip font-mono text-xs">${request.method || ''}</span>
@@ -305,6 +573,7 @@
               ${request.response_status ? `<span class="ml-auto inline-flex items-center gap-1 text-xs text-slate-500"><i class="fa-solid fa-signal"></i>${request.response_status}</span>` : ''}
             </div>
             <div class="font-mono text-slate-600 text-xs mt-1 break-all">${request.path || request.full_url || ''}</div>
+            ${tagHtml}
           `;
 
           container.insertBefore(a, container.firstChild);

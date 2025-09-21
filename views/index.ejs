@@ -54,6 +54,9 @@
   </style>
 </head>
 <body class="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50 text-slate-900">
+  <!-- Skip link for accessibility -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+  
   <section class="border-b border-slate-200/70 bg-white/70 glass">
     <div class="max-w-6xl mx-auto px-4 py-10">
       <div class="flex items-start gap-4">
@@ -73,7 +76,7 @@
     </div>
   </section>
 
-  <main class="max-w-6xl mx-auto px-4 py-8">
+  <main id="main-content" class="max-w-6xl mx-auto px-4 py-8" role="main">
     <!-- ADD URL • COMPOSER STYLE -->
     <div class="rounded-2xl border border-slate-200 shadow-soft bg-white/80 glass">
       <!-- Header -->
@@ -313,17 +316,19 @@
   </main>
 
   <!-- Modal -->
-  <div id="modal_overlay" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm opacity-0 transition-opacity duration-200"></div>
-  <div id="modal_panel" role="dialog" aria-modal="true" aria-labelledby="modal_title" aria-describedby="modal_desc" class="hidden fixed inset-0 grid place-items-center">
-  <div id="modal_inner" class="w-full max-w-md mx-4 translate-y-4 opacity-0">
+  <div id="modal_overlay" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm opacity-0 transition-opacity duration-200" aria-hidden="true"></div>
+  <div id="modal_panel" role="dialog" aria-modal="true" aria-labelledby="modal_title" aria-describedby="modal_desc" class="hidden fixed inset-0 grid place-items-center z-50">
+    <div id="modal_inner" class="w-full max-w-md mx-4 translate-y-4 opacity-0">
       <div class="rounded-2xl bg-white shadow-xl border border-slate-200 p-5 animate-scalein">
         <div class="flex items-start gap-3">
-          <div class="size-10 rounded-xl bg-rose-100 text-rose-700 grid place-items-center">
+          <div class="size-10 rounded-xl bg-rose-100 text-rose-700 grid place-items-center" aria-hidden="true">
             <i class="fa-solid fa-triangle-exclamation"></i>
           </div>
           <div class="flex-1">
             <h2 id="modal_title" class="text-lg font-semibold">Delete webhook?</h2>
-            <p id="modal_desc" class="text-sm text-slate-600 mt-1">This removes the endpoint and <strong>all logs</strong>. Cannot be undone.</p>
+            <p id="modal_desc" class="text-sm text-slate-600 mt-1">
+              This removes the endpoint and <strong>all logs</strong>. Cannot be undone.
+            </p>
             <div class="mt-3 text-xs text-slate-500">
               <div>Label: <span id="modal_label" class="font-medium text-slate-700">—</span></div>
               <div>ID: <code id="modal_id" class="font-mono">—</code></div>
@@ -331,9 +336,21 @@
           </div>
         </div>
         <div class="mt-5 flex items-center justify-end gap-2">
-          <button id="btn_cancel" class="px-4 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 transition">Cancel</button>
-          <button id="btn_confirm" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white shadow-sm transition">
-            <i class="fa-regular fa-trash-can"></i> Delete
+          <button 
+            id="btn_cancel" 
+            type="button"
+            class="btn btn-secondary px-4 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 transition focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+            aria-describedby="modal_desc"
+          >
+            Cancel
+          </button>
+          <button 
+            id="btn_confirm" 
+            type="button"
+            class="btn btn-danger inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white shadow-sm transition focus:ring-2 focus:ring-rose-500 focus:ring-offset-2"
+            aria-describedby="modal_desc"
+          >
+            <i class="fa-regular fa-trash-can" aria-hidden="true"></i> Delete
           </button>
         </div>
       </div>
@@ -420,35 +437,127 @@
     }
 
     const modal = {
-      overlay:null,panel:null,inner:null,idEl:null,labelEl:null,confirmBtn:null,cancelBtn:null,prevFocus:null,currentId:null,
-      open(id,label){
-        this.currentId = id; this.idEl.textContent = id; this.labelEl.textContent = label || '—';
+      overlay: null,
+      panel: null,
+      inner: null,
+      idEl: null,
+      labelEl: null,
+      confirmBtn: null,
+      cancelBtn: null,
+      prevFocus: null,
+      currentId: null,
+      focusableElements: null,
+      
+      open(id, label) {
+        this.currentId = id;
+        this.idEl.textContent = id;
+        this.labelEl.textContent = label || '—';
         this.prevFocus = document.activeElement;
+        
+        // Trap focus within modal
+        this._setupFocusTrap();
+        
         // Make elements display (remove display:none) before animating
-        this.overlay.classList.remove('hidden'); this.panel.classList.remove('hidden');
+        this.overlay.classList.remove('hidden');
+        this.panel.classList.remove('hidden');
+        this.overlay.setAttribute('aria-hidden', 'false');
+        
+        // Disable scrolling on body
+        document.body.style.overflow = 'hidden';
+        
         // Ensure start state for transition
-        this.overlay.classList.remove('opacity-100'); this.overlay.classList.add('opacity-0');
-        this.inner.classList.add('translate-y-4','opacity-0');
+        this.overlay.classList.remove('opacity-100');
+        this.overlay.classList.add('opacity-0');
+        this.inner.classList.add('translate-y-4', 'opacity-0');
+        
         // Next frame, run show transitions
-        requestAnimationFrame(()=>{
-          this.overlay.classList.add('opacity-100'); this.overlay.classList.remove('opacity-0');
-          this.inner.classList.remove('translate-y-4','opacity-0');
+        requestAnimationFrame(() => {
+          this.overlay.classList.add('opacity-100');
+          this.overlay.classList.remove('opacity-0');
+          this.inner.classList.remove('translate-y-4', 'opacity-0');
         });
-        this.confirmBtn.focus(); document.addEventListener('keydown', this._esc);
+        
+        // Focus the confirm button for accessibility
+        setTimeout(() => this.confirmBtn.focus(), 100);
+        
+        // Add event listeners
+        document.addEventListener('keydown', this._handleKeydown.bind(this));
+        this.overlay.addEventListener('click', this._handleOverlayClick.bind(this));
       },
-      close(){
-        // start hide animation
-        this.inner.classList.add('translate-y-4','opacity-0','transition','duration-150');
-        this.overlay.classList.remove('opacity-100'); this.overlay.classList.add('opacity-0');
-        // after transition end, hide from layout (display:none)
-        setTimeout(()=>{
-          this.overlay.classList.add('hidden'); this.panel.classList.add('hidden');
-          this.inner.classList.remove('transition','duration-150');
-        },150);
-        document.removeEventListener('keydown', this._esc); this.currentId = null;
-        if(this.prevFocus && this.prevFocus.focus) this.prevFocus.focus();
+      
+      close() {
+        // Start hide animation
+        this.inner.classList.add('translate-y-4', 'opacity-0', 'transition', 'duration-150');
+        this.overlay.classList.remove('opacity-100');
+        this.overlay.classList.add('opacity-0');
+        
+        // Re-enable scrolling
+        document.body.style.overflow = '';
+        
+        // After transition end, hide from layout (display:none)
+        setTimeout(() => {
+          this.overlay.classList.add('hidden');
+          this.panel.classList.add('hidden');
+          this.overlay.setAttribute('aria-hidden', 'true');
+          this.inner.classList.remove('transition', 'duration-150');
+        }, 150);
+        
+        // Clean up event listeners
+        document.removeEventListener('keydown', this._handleKeydown.bind(this));
+        this.overlay.removeEventListener('click', this._handleOverlayClick.bind(this));
+        
+        this.currentId = null;
+        
+        // Restore focus
+        if (this.prevFocus && this.prevFocus.focus) {
+          this.prevFocus.focus();
+        }
       },
-      _esc(e){ if(e.key==='Escape') modal.close(); }
+      
+      _setupFocusTrap() {
+        this.focusableElements = this.panel.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+      },
+      
+      _handleKeydown(e) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.close();
+          return;
+        }
+        
+        if (e.key === 'Tab') {
+          this._handleTabNavigation(e);
+        }
+      },
+      
+      _handleTabNavigation(e) {
+        if (!this.focusableElements.length) return;
+        
+        const firstElement = this.focusableElements[0];
+        const lastElement = this.focusableElements[this.focusableElements.length - 1];
+        
+        if (e.shiftKey) {
+          // Shift + Tab
+          if (document.activeElement === firstElement) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          // Tab
+          if (document.activeElement === lastElement) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
+      },
+      
+      _handleOverlayClick(e) {
+        if (e.target === this.overlay) {
+          this.close();
+        }
+      }
     };
 
     document.addEventListener('DOMContentLoaded', function(){

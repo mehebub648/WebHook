@@ -168,6 +168,9 @@
                 <a href="/request/<%= encodeURIComponent(webhook.id) %>" class="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-medium px-3 py-2 rounded-lg shadow-sm transition">
                   <i class="fa-regular fa-eye"></i> View
                 </a>
+                <button type="button" class="inline-flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white font-medium px-3 py-2 rounded-lg shadow-sm transition" data-configure-url="u-<%= webhook.id %>">
+                  <i class="fa-solid fa-wand-magic-sparkles"></i> Configure URL
+                </button>
                 <button data-open-delete="<%= webhook.id %>" data-webhook-label="<%= webhook.label %>" type="button"
                         class="inline-flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white font-semibold px-3 py-2 rounded-lg shadow-sm transition">
                   <i class="fa-regular fa-trash-can"></i> Delete
@@ -280,6 +283,19 @@
         });
       });
 
+      // Configure URL buttons
+      document.addEventListener('click', function(e){
+        const btn = e.target.closest('[data-configure-url]');
+        if(!btn) return;
+        const targetId = btn.getAttribute('data-configure-url');
+        const el = document.getElementById(targetId);
+        if(!el) return;
+        const base = el.textContent || '';
+        if(window.WebhookComposer && typeof window.WebhookComposer.open==='function'){
+          window.WebhookComposer.open(base);
+        }
+      });
+
       // Modal wiring for deletion
       document.querySelectorAll('[data-open-delete]').forEach(btn=>{
         btn.addEventListener('click', ()=> modal.open(btn.getAttribute('data-open-delete'), btn.getAttribute('data-webhook-label')||''));
@@ -354,5 +370,6 @@
       });
     });
   </script>
+  <script src="/composer.js"></script>
 </body>
 </html>

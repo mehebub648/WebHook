@@ -354,6 +354,18 @@
         if (el) navigator.clipboard.writeText(el.textContent).then(()=> showToast('Copied URL'));
       });
 
+      // Configure URL button for this webhook
+      const cfgBtn = document.getElementById('btn_configure_url');
+      cfgBtn?.addEventListener('click', function(){
+        try{
+          const origin = window.location.origin.replace(/\/$/, '');
+          const base = origin + '/webhook/' + encodeURIComponent('<%= webhookId %>');
+          if(window.WebhookComposer && typeof window.WebhookComposer.open==='function'){
+            window.WebhookComposer.open(base);
+          }
+        }catch(_){ }
+      });
+
       // Locale-format all timestamps
       document.querySelectorAll('.js-time').forEach(span=>{
         const iso = span.getAttribute('data-iso');
@@ -444,9 +456,14 @@
           </div>
         </div>
       </div>
-      <a class="inline-flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white font-medium px-3 py-2 rounded-lg shadow-sm transition" href="/">
-        <i class="fa-solid fa-arrow-left"></i> Back to Index
-      </a>
+      <div class="flex items-center gap-2">
+        <button type="button" id="btn_configure_url" class="inline-flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white font-medium px-3 py-2 rounded-lg shadow-sm transition">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> Configure URL
+        </button>
+        <a class="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-medium px-3 py-2 rounded-lg shadow-sm transition" href="/">
+          <i class="fa-solid fa-arrow-left"></i> Back to Index
+        </a>
+      </div>
     </div>
   </header>
 
@@ -746,5 +763,6 @@
     } catch (e) { console.warn('Live init failed', e); }
   })();
 </script>
+<script src="/composer.js"></script>
 </html>
 

@@ -109,6 +109,14 @@ const requestSchema = new mongoose.Schema({
   },
   tag: {
     type: String
+  },
+  // Read/Seen tracking
+  seen: {
+    type: Boolean,
+    default: false
+  },
+  seen_at: {
+    type: Date
   }
 });
 

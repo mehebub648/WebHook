@@ -904,7 +904,10 @@ app.all(/^\/webhook\/(.+)/, async (req, res) => {
       // Initialize forward response fields
       forward_response_status: null,
       forward_response_headers: null,
-      forward_response_body: null
+      forward_response_body: null,
+      // Seen/Read tracking
+      seen: false,
+      seen_at: null
     };
     
     // Save request to database first
@@ -1079,6 +1082,8 @@ app.get('/api/request/:webhookId/:rid', async (req, res) => {
       full_url: request.full_url || 'N/A',
       user_agent: request.user_agent || 'N/A',
       path: request.path || 'N/A',
+      seen: !!request.seen,
+      seen_at: request.seen_at || null,
       // Pretty formatted data
       prettyHeaders,
       prettyQuery,
@@ -1106,6 +1111,31 @@ app.get('/api/request/:webhookId/:rid', async (req, res) => {
     res.json(processedRequest);
   } catch (error) {
     console.error('Error fetching request details:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// API endpoint to mark a request as seen
+app.post('/api/request/:webhookId/:rid/seen', async (req, res) => {
+  try {
+    const webhookId = sanitizeId(req.params.webhookId);
+    const rid = req.params.rid;
+    if (!webhookId || !rid) {
+      return res.status(400).json({ error: 'Invalid webhook ID or request ID' });
+    }
+
+    const when = new Date();
+    await updateRequest(rid, { seen: true, seen_at: when });
+    try {
+      app.emitRequestEvent(webhookId, 'request:updated', {
+        rid,
+        seen: true,
+        seen_at: when.toISOString()
+      });
+    } catch (e) { /* ignore emit errors */ }
+    res.json({ ok: true, rid, seen: true, seen_at: when.toISOString() });
+  } catch (error) {
+    console.error('Error marking request seen:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });

@@ -504,10 +504,20 @@
                  data-path="<%= (request.path || request.full_url || '') %>"
                  data-method="<%= request.method || 'N/A' %>"
                  data-status="<%= request.response_status || '' %>"
+                 data-seen="<%= request.seen ? 'true' : 'false' %>"
                  class="block px-4 py-3 hover:bg-slate-50 transition <%= active ? '!bg-slate-50' : '' %>" 
                  href="/request/<%= encodeURIComponent(webhookId) %>?rid=<%= encodeURIComponent(request.rid) %>">
                 <div class="flex items-center gap-2 text-sm">
                   <span class="chip font-mono text-xs"><%= request.method || 'N/A' %></span>
+                  <% if (!request.seen) { %>
+                    <span class="chip text-xs bg-emerald-100 text-emerald-700 border-emerald-200" title="Unseen">
+                      <i class="fa-solid fa-circle-dot"></i> Unseen
+                    </span>
+                  <% } else { %>
+                    <span class="chip text-xs bg-slate-100 text-slate-600 border-slate-200" title="Seen">
+                      <i class="fa-regular fa-eye"></i> Seen
+                    </span>
+                  <% } %>
                   <span class="text-slate-500 font-mono text-xs js-time" data-iso="<%= requestTime %>"><%= requestTime %></span>
                   <% if (request.response_status) { %>
                     <span class="ml-auto inline-flex items-center gap-1 text-xs text-slate-500">
@@ -544,9 +554,16 @@
       <!-- Main -->
       <section class="bg-white border border-slate-200 rounded-2xl p-5 shadow-soft">
         <div class="border border-slate-200 rounded-xl p-4 bg-slate-50 text-slate-600">
-          <div class="flex items-center gap-2">
-            <i class="fa-solid fa-mouse-pointer"></i>
-            Select a request from the left to view details.
+          <div class="flex items-center gap-3 justify-between">
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-mouse-pointer"></i>
+              Select a request from the left to view details.
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="markAllSeen" class="text-xs text-slate-700 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100">
+                <i class="fa-regular fa-eye"></i> Mark all seen
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -593,6 +610,7 @@
           a.setAttribute('data-path', request.path || request.full_url || '');
           a.setAttribute('data-method', request.method || '');
           a.setAttribute('data-status', request.response_status || '');
+          a.setAttribute('data-seen', request.seen ? 'true' : 'false');
           a.href = '/request/' + encodeURIComponent('<%= webhookId %>') + '?rid=' + encodeURIComponent(request.rid);
           a.className = 'block px-4 py-3 hover:bg-slate-50 transition';
 
@@ -612,6 +630,9 @@
           a.innerHTML = `
             <div class="flex items-center gap-2 text-sm">
               <span class="chip font-mono text-xs">${request.method}</span>
+              ${request.seen ? 
+                '<span class="chip text-xs bg-slate-100 text-slate-600 border-slate-200" title="Seen"><i class="fa-regular fa-eye"></i> Seen</span>' :
+                '<span class="chip text-xs bg-emerald-100 text-emerald-700 border-emerald-200" title="Unseen"><i class="fa-solid fa-circle-dot"></i> Unseen</span>'}
               <span class="text-slate-500 font-mono text-xs js-time" data-iso="${requestTime}">${requestTime}</span>
               ${request.response_status ? `<span class="ml-auto inline-flex items-center gap-1 text-xs text-slate-500"><i class="fa-solid fa-signal"></i>${request.response_status}</span>` : ''}
               ${request.forward_response_status ? 
@@ -665,16 +686,61 @@
                   }catch(e){}
                 }
               }
+
+              // update seen/unseen chip
+              if(typeof data.seen !== 'undefined'){
+                a.setAttribute('data-seen', data.seen ? 'true' : 'false');
+                const chips = a.querySelectorAll('.chip');
+                // first chip is method; seen chip should be the second chip
+                const seenChip = chips[1];
+                if(seenChip){
+                  if(data.seen){
+                    seenChip.className = 'chip text-xs bg-slate-100 text-slate-600 border-slate-200';
+                    seenChip.innerHTML = '<i class="fa-regular fa-eye"></i> Seen';
+                    seenChip.setAttribute('title','Seen');
+                  }else{
+                    seenChip.className = 'chip text-xs bg-emerald-100 text-emerald-700 border-emerald-200';
+                    seenChip.innerHTML = '<i class="fa-solid fa-circle-dot"></i> Unseen';
+                    seenChip.setAttribute('title','Unseen');
+                  }
+                }
+              }
             }
           });
 
-          // If the detailed view is open for this rid, refresh its data so forwarding details appear
+          // If the detailed view is open for this rid, refresh its data so forwarding/seen details appear
           const currentSelected = typeof currentSelectedRid !== 'undefined' ? currentSelectedRid : '<%= selectedRid %>';
           if(currentSelected && data.rid === currentSelected){
             // reload detailed fragment
             try{ loadRequestDetails('<%= webhookId %>', data.rid); }catch(e){}
           }
         }catch(e){ }
+      });
+
+      // Mark a request as seen when opened
+      document.addEventListener('click', function(e){
+        const link = e.target.closest('[data-req-item]');
+        if(!link) return;
+        const href = link.getAttribute('href') || '';
+        const m = href.match(/\/request\/([^?]+)\?rid=(.+)$/);
+        if(!m) return;
+        const webhookId = decodeURIComponent(m[1]);
+        const rid = decodeURIComponent(m[2]);
+        // Fire and forget
+        try{ fetch(`/api/request/${encodeURIComponent(webhookId)}/${encodeURIComponent(rid)}/seen`, { method:'POST' }); }catch(e){}
+      });
+
+      // Bulk mark all visible as seen
+      document.getElementById('markAllSeen')?.addEventListener('click', async ()=>{
+        const anchors = Array.from(document.querySelectorAll('[data-req-item]'));
+        for(const a of anchors){
+          const href = a.getAttribute('href') || '';
+          const m = href.match(/\/request\/([^?]+)\?rid=(.+)$/);
+          if(!m) continue;
+          const webhookId = decodeURIComponent(m[1]);
+          const rid = decodeURIComponent(m[2]);
+          try{ await fetch(`/api/request/${encodeURIComponent(webhookId)}/${encodeURIComponent(rid)}/seen`, { method:'POST' }); }catch(e){}
+        }
       });
 
     } catch (e) { console.warn('Live init failed', e); }

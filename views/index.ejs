@@ -4,22 +4,48 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Webhook URLs</title>
-<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" sizes="any" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" sizes="any" />
+  
+  <!-- Fallback CSS for when CDN resources are blocked -->
+  <link rel="stylesheet" href="/fallback.css" />
+  <link rel="stylesheet" href="/icons.css" />
+  
+  <!-- CDN resources with error handling -->
   <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          keyframes: {
-            fadein: { '0%': {opacity:0, transform:'translateY(6px)'}, '100%': {opacity:1, transform:'translateY(0)'} },
-            scalein: { '0%': {opacity:0, transform:'scale(.96)'}, '100%': {opacity:1, transform:'scale(1)'} },
-          },
-          animation: { fadein:'fadein .25s ease-out', scalein:'scalein .2s ease-out' },
-          boxShadow: { soft: '0 2px 20px -4px rgba(2,6,23,.08)' }
-        }
+    // Load TailwindCSS with fallback
+    const tailwindScript = document.createElement('script');
+    tailwindScript.src = 'https://cdn.tailwindcss.com';
+    tailwindScript.onerror = function() {
+      console.log('TailwindCSS CDN blocked, using fallback styles');
+      document.body.classList.add('cdn-fallback');
+    };
+    tailwindScript.onload = function() {
+      // Configure Tailwind only if it loaded successfully
+      if (typeof tailwind !== 'undefined') {
+        tailwind.config = {
+          theme: {
+            extend: {
+              keyframes: {
+                fadein: { '0%': {opacity:0, transform:'translateY(6px)'}, '100%': {opacity:1, transform:'translateY(0)'} },
+                scalein: { '0%': {opacity:0, transform:'scale(.96)'}, '100%': {opacity:1, transform:'scale(1)'} },
+              },
+              animation: { fadein:'fadein .25s ease-out', scalein:'scalein .2s ease-out' },
+              boxShadow: { soft: '0 2px 20px -4px rgba(2,6,23,.08)' }
+            }
+          }
+        };
       }
-    }
+    };
+    document.head.appendChild(tailwindScript);
+    
+    // Load FontAwesome with fallback
+    const fontAwesome = document.createElement('link');
+    fontAwesome.rel = 'stylesheet';
+    fontAwesome.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css';
+    fontAwesome.onerror = function() {
+      console.log('FontAwesome CDN blocked, using fallback icons');
+    };
+    document.head.appendChild(fontAwesome);
   </script>
   <style>
     .glass{backdrop-filter:blur(10px);background:rgba(255,255,255,.75)}
@@ -61,54 +87,154 @@
         </div>
       </div>
 
-      <form method="post" action="/webhooks" class="p-5 space-y-4" id="create_form">
+      <form method="post" action="/webhooks" class="p-5 space-y-6" id="create_form" novalidate>
         <!-- Label Input -->
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
-          <div class="md:col-span-6">
-            <label class="text-xs font-medium text-slate-600 mb-1 block">Label (optional)</label>
-            <div class="flex items-center gap-2 bg-white border border-slate-300 rounded-lg px-3 py-2 min-h-10">
-              <input id="label_input" name="label" type="text" placeholder="e.g. Payment API"
-                     class="flex-1 bg-transparent text-sm text-slate-700 placeholder-slate-400 focus:outline-none" />
-              <div class="text-slate-500">
-                <i class="fa-solid fa-tag"></i>
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div class="lg:col-span-7">
+            <div class="form-group">
+              <label for="label_input" class="form-label">
+                <span class="flex items-center gap-2">
+                  <i class="fa-solid fa-tag text-emerald-600" aria-hidden="true"></i>
+                  Webhook Label (optional)
+                </span>
+              </label>
+              <div class="relative">
+                <input 
+                  id="label_input" 
+                  name="label" 
+                  type="text" 
+                  placeholder="e.g. Payment API, User Registration" 
+                  class="form-input pl-4 pr-4"
+                  pattern="[a-zA-Z0-9 _-]*"
+                  maxlength="50"
+                  aria-describedby="label-help"
+                />
+                <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                  <div class="text-slate-400" aria-hidden="true">
+                    <i class="fa-solid fa-tag text-sm"></i>
+                  </div>
+                </div>
               </div>
+              <p id="label-help" class="mt-1 text-xs text-slate-500">
+                Optional. Only letters, numbers, spaces, underscores and hyphens allowed. Max 50 characters.
+              </p>
             </div>
-            <p class="mt-1 text-[11px] text-slate-500">Optional. Only letters, numbers, space, underscore and hyphen allowed.</p>
           </div>
           
-          <div class="md:col-span-6 grid items-end">
-            <div class="text-[11px] text-slate-500 bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <div class="font-medium text-blue-800 mb-1">📋 URL Parameter Guide:</div>
-              <div class="space-y-1 text-blue-700">
-                <div><code class="font-mono bg-blue-100 px-1 rounded">res:200json</code> - Response with status 200 and JSON</div>
-                <div><code class="font-mono bg-blue-100 px-1 rounded">res:404html</code> - Response with status 404 and HTML</div>
-                <div><code class="font-mono bg-blue-100 px-1 rounded">fwd:https://example.com</code> - Forward request</div>
-                <div class="text-xs">Example: <code class="font-mono bg-blue-100 px-1 rounded">/webhook/abc123/res:200json/fwd:https://site.com</code></div>
+          <div class="lg:col-span-5">
+            <div class="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
+              <div class="flex items-start gap-2 mb-3">
+                <div class="text-blue-600 mt-0.5" aria-hidden="true">
+                  <i class="fa-solid fa-lightbulb"></i>
+                </div>
+                <div>
+                  <h3 class="font-semibold text-blue-900 text-sm mb-1">URL Parameter Guide</h3>
+                  <div class="space-y-2 text-xs text-blue-800">
+                    <div class="flex items-start gap-2">
+                      <code class="font-mono bg-blue-100 px-1.5 py-0.5 rounded text-blue-900">res:200json</code>
+                      <span class="flex-1">Response with status 200 and JSON</span>
+                    </div>
+                    <div class="flex items-start gap-2">
+                      <code class="font-mono bg-blue-100 px-1.5 py-0.5 rounded text-blue-900">res:404html</code>
+                      <span class="flex-1">Response with status 404 and HTML</span>
+                    </div>
+                    <div class="flex items-start gap-2">
+                      <code class="font-mono bg-blue-100 px-1.5 py-0.5 rounded text-blue-900">fwd:https://api.com</code>
+                      <span class="flex-1">Forward request to URL</span>
+                    </div>
+                    <div class="pt-1 border-t border-blue-200">
+                      <span class="text-blue-700 font-medium">Example:</span>
+                      <code class="block mt-1 font-mono bg-blue-100 px-1.5 py-1 rounded text-blue-900 text-xs break-all">
+                        /webhook/abc123/res:200json/fwd:https://api.example.com
+                      </code>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Submit -->
-        <div class="flex items-center gap-3 pt-1">
-          <button type="submit"
-            class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg shadow-sm transition active:scale-[.98]">
-            <i class="fa-solid fa-plus"></i> Create Webhook URL
+        <!-- Submit Section -->
+        <div class="flex flex-col sm:flex-row sm:items-center gap-4 pt-2 border-t border-slate-100">
+          <button 
+            type="submit"
+            class="btn btn-primary inline-flex items-center justify-center gap-2 px-6 py-3 text-base font-semibold shadow-lg hover:shadow-xl focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+            aria-describedby="submit-help"
+          >
+            <i class="fa-solid fa-plus" aria-hidden="true"></i> 
+            Create Webhook URL
           </button>
-          <span class="text-xs text-slate-500">You'll get a URL that supports parameters for response types and forwarding.</span>
+          <div class="flex-1">
+            <p id="submit-help" class="text-sm text-slate-600">
+              You'll get a unique URL that supports parameters for custom responses and request forwarding.
+            </p>
+            <div class="flex items-center gap-1 mt-1 text-xs text-slate-500">
+              <i class="fa-solid fa-shield-halved text-emerald-600" aria-hidden="true"></i>
+              <span>Secure • No signup required • Works instantly</span>
+            </div>
+          </div>
         </div>
       </form>
     </div>
 
     <!-- LIST HEADER -->
-    <div class="mt-6 flex items-center justify-between">
-      <div class="text-slate-700 font-medium">Your Endpoints</div>
-      <div class="flex items-center gap-2 text-xs text-slate-500"><i class="fa-regular fa-lightbulb"></i> Tip: Click a URL to view requests</div>
+    <div class="mt-8 mb-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-semibold text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-list text-emerald-600" aria-hidden="true"></i>
+            Your Webhook Endpoints
+          </h2>
+          <p class="text-sm text-slate-600 mt-1">
+            Manage and monitor your active webhook URLs
+          </p>
+        </div>
+        <div class="flex items-center gap-4">
+          <div class="flex items-center gap-2 text-sm text-slate-500 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
+            <i class="fa-regular fa-lightbulb text-blue-600" aria-hidden="true"></i> 
+            <span class="text-blue-800">Tip: Click any URL to view its requests</span>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- SYMMETRIC CARDS -->
+    <!-- ENDPOINTS LIST -->
     <% if (webhooks.length === 0) { %>
-      <div class="mt-4 p-6 text-center text-slate-600 rounded-xl border border-dashed border-slate-300 bg-white/70">No URLs yet. Create one above.</div>
+      <div class="mt-8 text-center py-16">
+        <div class="max-w-md mx-auto">
+          <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center">
+            <i class="fa-solid fa-link text-2xl text-slate-400" aria-hidden="true"></i>
+          </div>
+          <h3 class="text-lg font-semibold text-slate-900 mb-2">No webhooks yet</h3>
+          <p class="text-slate-600 mb-6">
+            Create your first webhook endpoint above to start receiving and testing HTTP requests.
+          </p>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+            <div class="flex flex-col items-center p-3 rounded-lg bg-emerald-50 border border-emerald-100">
+              <div class="text-emerald-600 mb-1" aria-hidden="true">
+                <i class="fa-solid fa-bolt"></i>
+              </div>
+              <span class="font-medium text-emerald-800">Mock Responses</span>
+              <span class="text-xs text-emerald-600 text-center">Return custom HTTP status codes and content types</span>
+            </div>
+            <div class="flex flex-col items-center p-3 rounded-lg bg-sky-50 border border-sky-100">
+              <div class="text-sky-600 mb-1" aria-hidden="true">
+                <i class="fa-solid fa-shuffle"></i>
+              </div>
+              <span class="font-medium text-sky-800">Request Forwarding</span>
+              <span class="text-xs text-sky-600 text-center">Proxy requests to your real APIs for testing</span>
+            </div>
+            <div class="flex flex-col items-center p-3 rounded-lg bg-violet-50 border border-violet-100">
+              <div class="text-violet-600 mb-1" aria-hidden="true">
+                <i class="fa-regular fa-eye"></i>
+              </div>
+              <span class="font-medium text-violet-800">Request Inspection</span>
+              <span class="text-xs text-violet-600 text-center">View headers, body, and response details</span>
+            </div>
+          </div>
+        </div>
+      </div>
     <% } else { %>
       <div class="mt-4 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <% webhooks.forEach(webhook => { %>
@@ -218,9 +344,75 @@
   <div id="toast_region" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 space-y-2"></div>
 
   <script>
+    // Form validation and enhancement
+    document.addEventListener('DOMContentLoaded', function() {
+      const form = document.getElementById('create_form');
+      const labelInput = document.getElementById('label_input');
+      const submitBtn = form.querySelector('button[type="submit"]');
+      
+      // Real-time validation for label input
+      if (labelInput) {
+        labelInput.addEventListener('input', function(e) {
+          const value = e.target.value;
+          const isValid = /^[a-zA-Z0-9 _-]*$/.test(value);
+          
+          // Visual feedback
+          const inputContainer = e.target.closest('.relative') || e.target.parentElement;
+          if (!isValid && value.length > 0) {
+            inputContainer.classList.add('border-red-300', 'bg-red-50');
+            inputContainer.classList.remove('border-slate-300');
+            // Show error message
+            let errorMsg = inputContainer.parentElement.querySelector('.error-message');
+            if (!errorMsg) {
+              errorMsg = document.createElement('p');
+              errorMsg.className = 'error-message mt-1 text-xs text-red-600';
+              errorMsg.textContent = 'Only letters, numbers, spaces, underscores and hyphens are allowed.';
+              inputContainer.parentElement.appendChild(errorMsg);
+            }
+          } else {
+            inputContainer.classList.remove('border-red-300', 'bg-red-50');
+            inputContainer.classList.add('border-slate-300');
+            // Remove error message
+            const errorMsg = inputContainer.parentElement.querySelector('.error-message');
+            if (errorMsg) errorMsg.remove();
+          }
+        });
+      }
+      
+      // Form submission enhancement
+      if (form && submitBtn) {
+        form.addEventListener('submit', function(e) {
+          // Disable submit button to prevent double submission
+          submitBtn.disabled = true;
+          submitBtn.innerHTML = '<i class="fa-solid fa-spinner icon-spin" aria-hidden="true"></i> Creating...';
+          
+          // Re-enable after a delay in case of error
+          setTimeout(() => {
+            if (submitBtn.disabled) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = '<i class="fa-solid fa-plus" aria-hidden="true"></i> Create Webhook URL';
+            }
+          }, 10000);
+        });
+      }
+      
+      // Auto-focus on label input for better UX
+      if (labelInput) {
+        labelInput.focus();
+      }
+      
+      // Add loading state management
+      window.addEventListener('beforeunload', function() {
+        if (submitBtn && submitBtn.disabled) {
+          // Form is being submitted, don't show confirmation
+          return;
+        }
+      });
+    });
+
     function showToast(msg){
       const t = document.createElement('div');
-      t.className = 'bg-slate-900 text-white px-4 py-2 rounded-lg shadow-lg animate-fadein';
+      t.className = 'toast';
       t.textContent = msg;
       document.getElementById('toast_region').appendChild(t);
       setTimeout(()=>{ t.classList.add('opacity-0','transition','duration-300'); }, 1400);

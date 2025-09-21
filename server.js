@@ -181,12 +181,12 @@ function parseWebhookPath(path) {
     result.tag = decodeURIComponent(tagMatch[2]);
   }
   
-  // Look for fwd: pattern with $$ bounded URLs for safe extraction of complex URLs
-  // First try the new $$url$$ format: /fwd:$$https://example.com/path?param=value#fragment$$
+  // Look for fwd: pattern. Support both $$-bounded and unbounded forms.
+  // Bounded form: /fwd:$$https://example.com/path?param=value#frag$$
+  // Unbounded form: /fwd:https://example.com/path/with/slashes?and=params#frag/next:param
   const fwdBoundedMatch = paramString.match(/(^|\/)fwd:\$\$(.*?)\$\$/);
   if (fwdBoundedMatch) {
     const forwardUrl = fwdBoundedMatch[2];
-    
     try {
       const url = new URL(forwardUrl);
       if (url.protocol === 'http:' || url.protocol === 'https:') {
@@ -198,28 +198,42 @@ function parseWebhookPath(path) {
       result.error = `Invalid forward URL: ${forwardUrl}`;
     }
   } else {
-    // Fallback to legacy format for backward compatibility: /fwd:https://url
-    const fwdMatch = paramString.match(/(^|\/)fwd:(https?:\/\/[^\s]+)/);
-    if (fwdMatch) {
-      let forwardUrl = fwdMatch[2];
-      
-      // The forward URL might extend to the end of the string or until the next parameter
-      // Find where this fwd parameter ends (either at end of string or before next known parameter)
-      const fwdStart = paramString.indexOf(fwdMatch[0]);
-      const fwdValueStart = fwdStart + fwdMatch[0].length - forwardUrl.length;
-      
-      // Look for the next parameter that starts with res:, fullbody:, tag:, or another known pattern
-      const remainingString = paramString.substring(fwdValueStart);
-      const nextParamMatch = remainingString.match(/\/(res:\d{3}(?:plain|json|html)|fullbody:true|tag:[^\/]+)/);
-      
-      if (nextParamMatch) {
-        // There's another parameter after the fwd URL
-        forwardUrl = remainingString.substring(0, nextParamMatch.index);
-      } else {
-        // fwd URL extends to the end
-        forwardUrl = remainingString;
+    // Unbounded fallback: find 'fwd:' and extract until next '/<knownParam>' or end
+    const fwdIndex = paramString.indexOf('fwd:');
+    if (fwdIndex !== -1) {
+      // Start after 'fwd:'
+      let remaining = paramString.substring(fwdIndex + 4);
+
+      // Support optional '!' directly after 'fwd:' to indicate 'ignore parameter-like tokens inside URL'
+      let ignoreParamLike = false;
+      if (remaining.startsWith('!')) {
+        ignoreParamLike = true;
+        remaining = remaining.substring(1);
       }
-      
+
+      // If remaining starts with $$ we would have matched above, so strip possible leading slashes
+      if (remaining.startsWith('/')) remaining = remaining.substring(1);
+
+      // Choose which tokens should terminate the fwd URL depending on ignoreParamLike
+      // If ignoreParamLike is true, only stop at explicit res: or fullbody: or a bounded fwd:$$ marker
+      const nextParamRegex = ignoreParamLike
+        ? /\/(res:\d{3}(?:plain|json|html)|fullbody:true|fwd:\$\$)/
+        : /\/(res:\d{3}(?:plain|json|html)|fullbody:true|tag:[^\/]+|fwd:\$\$)/;
+
+      const nextParamMatch = remaining.match(nextParamRegex);
+
+      let forwardUrlCandidate;
+      if (nextParamMatch) {
+        forwardUrlCandidate = remaining.substring(0, nextParamMatch.index);
+      } else {
+        forwardUrlCandidate = remaining;
+      }
+
+      // Trim possible trailing slashes that are part of paths separating parameters
+      forwardUrlCandidate = forwardUrlCandidate.replace(/\/$/, '');
+
+      const forwardUrl = forwardUrlCandidate;
+
       try {
         const url = new URL(forwardUrl);
         if (url.protocol === 'http:' || url.protocol === 'https:') {
@@ -291,7 +305,9 @@ async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawB
       url: forwardUrl,
       headers,
       timeout: 30000,
-      responseType: 'text' // Get response as text to capture body
+      responseType: 'text', // Get response as text to capture body
+      // Resolve the promise for any HTTP status so we can capture 4xx/5xx responses
+      validateStatus: () => true
     };
     
     if (rawBody) {
@@ -435,7 +451,9 @@ async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody
       url: forwardUrl,
       headers,
       timeout: 30000,
-      responseType: 'text' // Get response as text to capture body
+      responseType: 'text', // Get response as text to capture body
+      // Resolve the promise for any HTTP status so we can capture 4xx/5xx responses
+      validateStatus: () => true
     };
     
     if (rawBody) {

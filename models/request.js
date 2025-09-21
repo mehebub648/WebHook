@@ -80,6 +80,28 @@ const requestSchema = new mongoose.Schema({
   forward_response_body: {
     type: String
   },
+  // Forward request fields (what was sent to the forwarded URL)
+  forward_request_headers: {
+    type: mongoose.Schema.Types.Mixed
+  },
+  forward_request_body: {
+    type: String
+  },
+  forward_request_method: {
+    type: String
+  },
+  forward_request_url: {
+    type: String
+  },
+  forward_request_timestamp: {
+    type: Date
+  },
+  forward_response_timestamp: {
+    type: Date
+  },
+  forward_duration_ms: {
+    type: Number
+  },
   // Additional fields for webhook parameters
   full_body: {
     type: Boolean,

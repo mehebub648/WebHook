@@ -111,7 +111,9 @@ function sanitizeId(id) {
 }
 
 function parseWebhookPath(path) {
-  // Parse /webhook/<id>/res:<status><type>/fwd:<url>/fullbody:true/tag:<string> format
+  // Parse /webhook/<id>/res:<status><type>/fwd:$$<url>$$/fullbody:true/tag:<string> format
+  // The new fwd:$$url$$ format safely extracts complex URLs with fragments, query params, etc.
+  // Legacy fwd:url format is still supported for backward compatibility
   // Remove /webhook/ prefix
   const cleanPath = path.replace(/^\/webhook\//, '');
   
@@ -179,27 +181,11 @@ function parseWebhookPath(path) {
     result.tag = decodeURIComponent(tagMatch[2]);
   }
   
-  // Look for fwd: pattern - need to be more careful with URL parsing
-  const fwdMatch = paramString.match(/(^|\/)fwd:(https?:\/\/[^\s]+)/);
-  if (fwdMatch) {
-    let forwardUrl = fwdMatch[2];
-    
-    // The forward URL might extend to the end of the string or until the next parameter
-    // Find where this fwd parameter ends (either at end of string or before next known parameter)
-    const fwdStart = paramString.indexOf(fwdMatch[0]);
-    const fwdValueStart = fwdStart + fwdMatch[0].length - forwardUrl.length;
-    
-    // Look for the next parameter that starts with res:, fullbody:, tag:, or another known pattern
-    const remainingString = paramString.substring(fwdValueStart);
-    const nextParamMatch = remainingString.match(/\/(res:\d{3}(?:plain|json|html)|fullbody:true|tag:[^\/]+)/);
-    
-    if (nextParamMatch) {
-      // There's another parameter after the fwd URL
-      forwardUrl = remainingString.substring(0, nextParamMatch.index);
-    } else {
-      // fwd URL extends to the end
-      forwardUrl = remainingString;
-    }
+  // Look for fwd: pattern with $$ bounded URLs for safe extraction of complex URLs
+  // First try the new $$url$$ format: /fwd:$$https://example.com/path?param=value#fragment$$
+  const fwdBoundedMatch = paramString.match(/(^|\/)fwd:\$\$(.*?)\$\$/);
+  if (fwdBoundedMatch) {
+    const forwardUrl = fwdBoundedMatch[2];
     
     try {
       const url = new URL(forwardUrl);
@@ -210,6 +196,40 @@ function parseWebhookPath(path) {
       }
     } catch (e) {
       result.error = `Invalid forward URL: ${forwardUrl}`;
+    }
+  } else {
+    // Fallback to legacy format for backward compatibility: /fwd:https://url
+    const fwdMatch = paramString.match(/(^|\/)fwd:(https?:\/\/[^\s]+)/);
+    if (fwdMatch) {
+      let forwardUrl = fwdMatch[2];
+      
+      // The forward URL might extend to the end of the string or until the next parameter
+      // Find where this fwd parameter ends (either at end of string or before next known parameter)
+      const fwdStart = paramString.indexOf(fwdMatch[0]);
+      const fwdValueStart = fwdStart + fwdMatch[0].length - forwardUrl.length;
+      
+      // Look for the next parameter that starts with res:, fullbody:, tag:, or another known pattern
+      const remainingString = paramString.substring(fwdValueStart);
+      const nextParamMatch = remainingString.match(/\/(res:\d{3}(?:plain|json|html)|fullbody:true|tag:[^\/]+)/);
+      
+      if (nextParamMatch) {
+        // There's another parameter after the fwd URL
+        forwardUrl = remainingString.substring(0, nextParamMatch.index);
+      } else {
+        // fwd URL extends to the end
+        forwardUrl = remainingString;
+      }
+      
+      try {
+        const url = new URL(forwardUrl);
+        if (url.protocol === 'http:' || url.protocol === 'https:') {
+          result.forwardUrl = forwardUrl;
+        } else {
+          result.error = `Invalid forward URL protocol: ${forwardUrl}`;
+        }
+      } catch (e) {
+        result.error = `Invalid forward URL: ${forwardUrl}`;
+      }
     }
   }
   
@@ -249,6 +269,8 @@ async function sendImmediateResponse(res, status, type, data) {
 
 // Helper function to forward request and respond with forwarded response
 async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawBody, fullBody = false) {
+  const startTime = Date.now();
+  
   try {
     // Prepare headers for proxying
     const headers = { ...req.headers };
@@ -276,7 +298,10 @@ async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawB
       axiosConfig.data = rawBody;
     }
     
+    const forwardRequestTimestamp = new Date();
     const response = await axios(axiosConfig);
+    const forwardResponseTimestamp = new Date();
+    const duration = Date.now() - startTime;
     
     // Capture response details
     let responseBody = response.data || '';
@@ -299,14 +324,21 @@ async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawB
     res.status(response.status);
     res.send(response.data); // Send original full response to client
     
-    // Update request with forwarded status and response details
+    // Update request with comprehensive forwarded details
     try {
       await updateRequest(requestEntry.rid, {
         proxied_status: response.status,
         response_status: response.status,
         forward_response_status: response.status,
         forward_response_headers: response.headers,
-        forward_response_body: responseBody
+        forward_response_body: responseBody,
+        forward_request_headers: headers,
+        forward_request_body: rawBody ? rawBody.toString('utf8') : '',
+        forward_request_method: req.method,
+        forward_request_url: forwardUrl,
+        forward_request_timestamp: forwardRequestTimestamp,
+        forward_response_timestamp: forwardResponseTimestamp,
+        forward_duration_ms: duration
       });
       // Emit socket update for proxied status
       try {
@@ -314,7 +346,8 @@ async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawB
           rid: requestEntry.rid, 
           proxied_status: response.status, 
           response_status: response.status,
-          forward_response_status: response.status
+          forward_response_status: response.status,
+          forward_duration_ms: duration
         });
       } catch (e) { /* ignore emit errors */ }
     } catch (error) {
@@ -323,6 +356,19 @@ async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawB
     
   } catch (proxyError) {
     console.error('Forward request error:', proxyError);
+    const duration = Date.now() - startTime;
+    
+    // Prepare headers for error logging
+    const headers = { ...req.headers };
+    delete headers.connection;
+    delete headers['keep-alive'];
+    delete headers['proxy-authenticate'];
+    delete headers['proxy-authorization'];
+    delete headers.te;
+    delete headers.trailers;
+    delete headers['transfer-encoding'];
+    delete headers.upgrade;
+    delete headers.host;
     
     // Update request with proxy error
     try {
@@ -330,14 +376,21 @@ async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawB
         proxy_error: proxyError.message,
         response_status: 502,
         forward_response_status: 502,
-        forward_response_body: `Error: ${proxyError.message}`
+        forward_response_body: `Error: ${proxyError.message}`,
+        forward_request_headers: headers || {},
+        forward_request_body: rawBody ? rawBody.toString('utf8') : '',
+        forward_request_method: req.method,
+        forward_request_url: forwardUrl,
+        forward_request_timestamp: new Date(),
+        forward_duration_ms: duration
       });
       try { 
         app.emitRequestEvent(requestEntry.webhook_id, 'request:updated', { 
           rid: requestEntry.rid, 
           proxy_error: proxyError.message, 
           response_status: 502,
-          forward_response_status: 502
+          forward_response_status: 502,
+          forward_duration_ms: duration
         }); 
       } catch(e) { /* ignore emit errors */ }
     } catch (error) {
@@ -360,6 +413,8 @@ async function forwardRequestAndRespond(res, requestEntry, forwardUrl, req, rawB
 
 // Helper function to forward request in background (fire and forget)
 async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody, fullBody = false) {
+  const startTime = Date.now();
+  
   try {
     // Prepare headers for proxying
     const headers = { ...req.headers };
@@ -387,7 +442,10 @@ async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody
       axiosConfig.data = rawBody;
     }
     
+    const forwardRequestTimestamp = new Date();
     const response = await axios(axiosConfig);
+    const forwardResponseTimestamp = new Date();
+    const duration = Date.now() - startTime;
     
     // Capture response details
     let responseBody = response.data || '';
@@ -402,14 +460,21 @@ async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody
       }
     }
     
-    // Update request with background forward status and response details
+    // Update request with comprehensive background forward details
     try {
       await updateRequest(requestEntry.rid, {
         proxied_status: response.status,
         background_forward: true,
         forward_response_status: response.status,
         forward_response_headers: response.headers,
-        forward_response_body: responseBody
+        forward_response_body: responseBody,
+        forward_request_headers: headers,
+        forward_request_body: rawBody ? rawBody.toString('utf8') : '',
+        forward_request_method: req.method,
+        forward_request_url: forwardUrl,
+        forward_request_timestamp: forwardRequestTimestamp,
+        forward_response_timestamp: forwardResponseTimestamp,
+        forward_duration_ms: duration
       });
       // Emit socket update for background forward status
       try {
@@ -417,7 +482,8 @@ async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody
           rid: requestEntry.rid, 
           proxied_status: response.status,
           background_forward: true,
-          forward_response_status: response.status
+          forward_response_status: response.status,
+          forward_duration_ms: duration
         });
       } catch (e) { /* ignore emit errors */ }
     } catch (error) {
@@ -426,6 +492,19 @@ async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody
     
   } catch (proxyError) {
     console.error('Background forward error:', proxyError);
+    const duration = Date.now() - startTime;
+    
+    // Prepare headers for error logging
+    const headers = { ...req.headers };
+    delete headers.connection;
+    delete headers['keep-alive'];
+    delete headers['proxy-authenticate'];
+    delete headers['proxy-authorization'];
+    delete headers.te;
+    delete headers.trailers;
+    delete headers['transfer-encoding'];
+    delete headers.upgrade;
+    delete headers.host;
     
     // Update request with background proxy error
     try {
@@ -433,14 +512,21 @@ async function forwardRequestInBackground(requestEntry, forwardUrl, req, rawBody
         proxy_error: proxyError.message,
         background_forward: true,
         forward_response_status: 502,
-        forward_response_body: `Error: ${proxyError.message}`
+        forward_response_body: `Error: ${proxyError.message}`,
+        forward_request_headers: headers || {},
+        forward_request_body: rawBody ? rawBody.toString('utf8') : '',
+        forward_request_method: req.method,
+        forward_request_url: forwardUrl,
+        forward_request_timestamp: new Date(),
+        forward_duration_ms: duration
       });
       try { 
         app.emitRequestEvent(requestEntry.webhook_id, 'request:updated', { 
           rid: requestEntry.rid, 
           proxy_error: proxyError.message,
           background_forward: true,
-          forward_response_status: 502
+          forward_response_status: 502,
+          forward_duration_ms: duration
         }); 
       } catch(e) { /* ignore emit errors */ }
     } catch (error) {
@@ -862,13 +948,18 @@ app.get('/api/request/:webhookId/:rid', async (req, res) => {
       return res.status(400).json({ error: 'Invalid webhook ID or request ID' });
     }
     
-    const requests = await findRequests(webhookId);
-    const request = requests.find(r => r.rid === rid);
+  const requests = await findRequests(webhookId);
+  let request = requests.find(r => r.rid === rid);
     
     if (!request) {
       return res.status(404).json({ error: 'Request not found' });
     }
     
+    // Ensure we have a plain object (Mongoose documents need to be converted)
+    if (request && typeof request.toObject === 'function') {
+      request = request.toObject();
+    }
+
     // Process the request data for display
     const prettyHeaders = JSON.stringify(request.headers || {}, null, 2);
     const prettyQuery = JSON.stringify(request.query || {}, null, 2);
@@ -895,30 +986,46 @@ app.get('/api/request/:webhookId/:rid', async (req, res) => {
 
     // Compute what was forwarded (request) headers/body for display
     let prettyForwardRequestHeaders = '';
-    try {
-      const hopByHop = new Set([
-        'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
-        'te', 'trailers', 'transfer-encoding', 'upgrade', 'host'
-      ]);
-      const headersObj = request.headers || {};
-      const forwardedHeaders = Object.fromEntries(
-        Object.entries(headersObj).filter(([k]) => !hopByHop.has(String(k).toLowerCase()))
-      );
-      prettyForwardRequestHeaders = JSON.stringify(forwardedHeaders, null, 2);
-    } catch (e) {
-      prettyForwardRequestHeaders = JSON.stringify(request.headers || {}, null, 2);
+    if (request.forward_request_headers) {
+      // Use stored forward request headers if available
+      prettyForwardRequestHeaders = JSON.stringify(request.forward_request_headers, null, 2);
+    } else {
+      // Fallback to computing from original headers (legacy requests)
+      try {
+        const hopByHop = new Set([
+          'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+          'te', 'trailers', 'transfer-encoding', 'upgrade', 'host'
+        ]);
+        const headersObj = request.headers || {};
+        const forwardedHeaders = Object.fromEntries(
+          Object.entries(headersObj).filter(([k]) => !hopByHop.has(String(k).toLowerCase()))
+        );
+        prettyForwardRequestHeaders = JSON.stringify(forwardedHeaders, null, 2);
+      } catch (e) {
+        prettyForwardRequestHeaders = JSON.stringify(request.headers || {}, null, 2);
+      }
     }
 
     let prettyForwardRequestBody = '';
-    try {
-      const decodedReqBody = JSON.parse(request.body || '');
-      prettyForwardRequestBody = JSON.stringify(decodedReqBody, null, 2);
-    } catch (e) {
-      prettyForwardRequestBody = request.body || '';
+    if (request.forward_request_body !== undefined && request.forward_request_body !== null) {
+      // Use stored forward request body if available
+      try {
+        const decodedReqBody = JSON.parse(request.forward_request_body);
+        prettyForwardRequestBody = JSON.stringify(decodedReqBody, null, 2);
+      } catch (e) {
+        prettyForwardRequestBody = request.forward_request_body;
+      }
+    } else {
+      // Fallback to original body (legacy requests)
+      try {
+        const decodedReqBody = JSON.parse(request.body || '');
+        prettyForwardRequestBody = JSON.stringify(decodedReqBody, null, 2);
+      } catch (e) {
+        prettyForwardRequestBody = request.body || '';
+      }
     }
     
-    const processedRequest = {
-      ...request,
+    const processedRequest = Object.assign({}, request, {
       // Ensure undefined/null values have fallbacks
       ip: request.ip || 'N/A',
       method: request.method || 'N/A',
@@ -935,7 +1042,19 @@ app.get('/api/request/:webhookId/:rid', async (req, res) => {
       prettyForwardRequestBody,
       requestTime: new Date(request.time).toISOString(),
       ridSafe: (request.rid || 'req').replace(/[^a-zA-Z0-9_-]/g,'')
-    };
+    });
+    // Also include raw forward fields if present (for client-side logic)
+    if (request.forward_response_headers) processedRequest.forward_response_headers = request.forward_response_headers;
+    if (request.forward_response_body !== undefined) processedRequest.forward_response_body = request.forward_response_body;
+    if (request.forward_request_headers) processedRequest.forward_request_headers = request.forward_request_headers;
+    if (request.forward_request_body !== undefined) processedRequest.forward_request_body = request.forward_request_body;
+    if (request.forward_request_method) processedRequest.forward_request_method = request.forward_request_method;
+    if (request.forward_request_url) processedRequest.forward_request_url = request.forward_request_url;
+    if (request.parsed_forward_url) processedRequest.parsed_forward_url = request.parsed_forward_url;
+    if (request.background_forward !== undefined) processedRequest.background_forward = request.background_forward;
+    if (request.forward_response_status !== undefined) processedRequest.forward_response_status = request.forward_response_status;
+    if (request.forward_request_timestamp) processedRequest.forward_request_timestamp = request.forward_request_timestamp;
+    if (request.forward_response_timestamp) processedRequest.forward_response_timestamp = request.forward_response_timestamp;
     
     res.json(processedRequest);
   } catch (error) {

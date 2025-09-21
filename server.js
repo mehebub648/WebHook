@@ -892,6 +892,30 @@ app.get('/api/request/:webhookId/:rid', async (req, res) => {
         prettyForwardBody = request.forward_response_body;
       }
     }
+
+    // Compute what was forwarded (request) headers/body for display
+    let prettyForwardRequestHeaders = '';
+    try {
+      const hopByHop = new Set([
+        'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+        'te', 'trailers', 'transfer-encoding', 'upgrade', 'host'
+      ]);
+      const headersObj = request.headers || {};
+      const forwardedHeaders = Object.fromEntries(
+        Object.entries(headersObj).filter(([k]) => !hopByHop.has(String(k).toLowerCase()))
+      );
+      prettyForwardRequestHeaders = JSON.stringify(forwardedHeaders, null, 2);
+    } catch (e) {
+      prettyForwardRequestHeaders = JSON.stringify(request.headers || {}, null, 2);
+    }
+
+    let prettyForwardRequestBody = '';
+    try {
+      const decodedReqBody = JSON.parse(request.body || '');
+      prettyForwardRequestBody = JSON.stringify(decodedReqBody, null, 2);
+    } catch (e) {
+      prettyForwardRequestBody = request.body || '';
+    }
     
     const processedRequest = {
       ...request,
@@ -907,6 +931,8 @@ app.get('/api/request/:webhookId/:rid', async (req, res) => {
       prettyBody,
       prettyForwardHeaders,
       prettyForwardBody,
+      prettyForwardRequestHeaders,
+      prettyForwardRequestBody,
       requestTime: new Date(request.time).toISOString(),
       ridSafe: (request.rid || 'req').replace(/[^a-zA-Z0-9_-]/g,'')
     };

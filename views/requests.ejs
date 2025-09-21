@@ -89,7 +89,7 @@
       }
     }
 
-    function updateRequestDetailsView(request) {
+  function updateRequestDetailsView(request) {
       const mainSection = document.querySelector('main section');
       if (!mainSection) return;
 
@@ -98,15 +98,17 @@
       const ridSafe = request.ridSafe;
 
       // Check if there's any forwarding information
-      const hasForwardUrl = request.parsed_forward_url;
-      const hasForwardResponse = request.forward_response_status || request.forward_response_headers || request.forward_response_body;
+  const hasForwardUrl = !!request.parsed_forward_url;
+  const hasForwardResponse = !!(request.forward_response_status || request.forward_response_headers || request.forward_response_body);
 
       let forwardingCard = '';
-      if (hasForwardUrl) {
+  if (hasForwardUrl || hasForwardResponse) {
         const forwardHeaders = request.prettyForwardHeaders || '{}';
         const forwardBody = request.prettyForwardBody || '';
         const forwardStatus = request.forward_response_status || 'No Response';
-        
+        const fwdReqHeaders = request.prettyForwardRequestHeaders || '{}';
+        const fwdReqBody = request.prettyForwardRequestBody || '';
+
         forwardingCard = `
           <div class="mt-6">
             <div class="flex items-start justify-between gap-3">
@@ -119,7 +121,7 @@
                   '<span class="chip text-xs bg-orange-100 text-orange-700 border-orange-200"><i class="fa-solid fa-clock"></i> Background</span>' : 
                   '<span class="chip text-xs bg-green-100 text-green-700 border-green-200"><i class="fa-solid fa-sync"></i> Synchronous</span>'}
                 ${hasForwardResponse ? 
-                  `<span class="chip text-xs"><i class="fa-solid fa-signal"></i> ${forwardStatus}</span>` : 
+                  `<span class=\"chip text-xs\"><i class=\"fa-solid fa-signal\"></i> ${forwardStatus}</span>` : 
                   '<span class="chip text-xs bg-gray-100 text-gray-600 border-gray-200"><i class="fa-solid fa-clock"></i> Pending</span>'}
               </div>
             </div>
@@ -129,29 +131,47 @@
               <div class="border border-slate-200 rounded-xl p-3 bg-slate-50">
                 <h4 class="text-sm font-medium text-slate-700 mb-2">Configuration</h4>
                 <div class="grid grid-cols-[max-content,1fr] gap-x-4 gap-y-2 font-mono text-sm">
-                  <div class="text-slate-500">Forward URL</div><div class="break-all text-blue-600">${request.parsed_forward_url}</div>
+                  <div class="text-slate-500">Forward URL</div><div class="break-all text-blue-600">${request.parsed_forward_url || 'N/A'}</div>
                   <div class="text-slate-500">Mode</div>
                   ${request.background_forward ? 
                     '<div class="text-orange-600 font-semibold">Background (Fire & Forget)</div>' : 
                     '<div class="text-green-600 font-semibold">Synchronous (Wait for Response)</div>'}
-                  ${request.full_body ? '<div class="text-slate-500">Full Body</div><div class="text-blue-600">Enabled</div>' : ''}
+                  <div class="text-slate-500">Full Body</div><div class="text-slate-900"><code class="font-mono">${request.full_body ? 'true' : 'false'}</code></div>
+                  <div class="text-slate-500">Background Forward</div><div class="text-slate-900"><code class="font-mono">${request.background_forward ? 'true' : 'false'}</code></div>
+                  <div class="text-slate-500">Tag</div><div class="text-slate-900"><code class="font-mono">${(request.tag === null || typeof request.tag === 'undefined' || request.tag === '') ? 'null' : String(request.tag)}</code></div>
                   ${request.proxy_error ? '<div class="text-slate-500">Error</div><div class="text-red-600 break-all">' + request.proxy_error + '</div>' : ''}
                 </div>
               </div>
 
-              <!-- Forward Status -->
+              <!-- Forward Response Status -->
               <div class="border border-slate-200 rounded-xl p-3 bg-slate-50">
                 <h4 class="text-sm font-medium text-slate-700 mb-2">Response Status</h4>
                 <div class="grid grid-cols-[max-content,1fr] gap-x-4 gap-y-2 font-mono text-sm">
                   <div class="text-slate-500">Status Code</div>
-                  <div class="font-semibold ${hasForwardResponse ? 'text-blue-700' : 'text-gray-600'}">
-                    ${forwardStatus}
-                  </div>
+                  <div class="font-semibold ${hasForwardResponse ? 'text-blue-700' : 'text-gray-600'}">${forwardStatus}</div>
                   ${request.background_forward ? 
-                    '<div class="text-slate-500">Info</div><div class="text-orange-600 text-xs">Request was processed in background without blocking the original response</div>' : 
-                    (hasForwardResponse ? '<div class="text-slate-500">Info</div><div class="text-green-600 text-xs">Original response was the proxied response from the forward URL</div>' : 
+                    '<div class="text-slate-500">Info</div><div class="text-orange-600 text-xs">Processed in background without blocking the original response</div>' : 
+                    (hasForwardResponse ? '<div class="text-slate-500">Info</div><div class="text-green-600 text-xs">Original response was proxied from the forward URL</div>' : 
                     '<div class="text-slate-500">Info</div><div class="text-gray-600 text-xs">Forward request may still be processing or failed</div>')}
                 </div>
+              </div>
+
+              <!-- Forwarded Request Headers -->
+              <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 codecard">
+                <div class="flex items-center justify-between">
+                  <h4 class="text-sm font-medium text-slate-700">Forwarded Request Headers</h4>
+                  <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100" data-copy-target="fwd-req-hdr-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
+                </div>
+                <pre id="fwd-req-hdr-${ridSafe}" class="whitespace-pre-wrap break-all font-mono text-sm mt-2">${fwdReqHeaders}</pre>
+              </div>
+
+              <!-- Forwarded Request Body -->
+              <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 codecard">
+                <div class="flex items-center justify-between">
+                  <h4 class="text-sm font-medium text-slate-700">Forwarded Request Body</h4>
+                  <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100" data-copy-target="fwd-req-body-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
+                </div>
+                <pre id="fwd-req-body-${ridSafe}" class="whitespace-pre-wrap break-all font-mono text-sm mt-2">${fwdReqBody}</pre>
               </div>
 
               ${hasForwardResponse ? `
@@ -159,8 +179,7 @@
                 <div class="border border-slate-200 rounded-xl p-3 bg-blue-50 codecard">
                   <div class="flex items-center justify-between">
                     <h4 class="text-sm font-medium text-slate-700">Response Headers</h4>
-                    <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
-                            data-copy-target="fwd-hdr-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
+                    <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100" data-copy-target="fwd-hdr-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
                   </div>
                   <pre id="fwd-hdr-${ridSafe}" class="whitespace-pre-wrap break-all font-mono text-sm mt-2">${forwardHeaders}</pre>
                 </div>
@@ -169,8 +188,7 @@
                 <div class="border border-slate-200 rounded-xl p-3 bg-blue-50 md:col-span-2 codecard">
                   <div class="flex items-center justify-between">
                     <h4 class="text-sm font-medium text-slate-700">Response Body</h4>
-                    <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
-                            data-copy-target="fwd-body-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
+                    <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100" data-copy-target="fwd-body-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
                   </div>
                   <pre id="fwd-body-${ridSafe}" class="whitespace-pre-wrap break-all font-mono text-sm mt-2">${forwardBody}</pre>
                 </div>
@@ -180,9 +198,7 @@
                   <div class="flex items-center gap-2 text-gray-600">
                     <i class="fa-solid fa-info-circle"></i>
                     <span class="text-sm">
-                      ${request.background_forward ? 
-                        'Background forward request - response data not captured' : 
-                        'No response data available yet'}
+                      ${request.background_forward ? 'Background forward request - response data not captured' : 'No response data available yet'}
                     </span>
                   </div>
                 </div>
@@ -232,7 +248,10 @@
               <div class="text-slate-500">Response</div><div>${respStatus}</div>
               <div class="text-slate-500">Full URL</div><div class="break-all">${request.full_url}</div>
               <div class="text-slate-500">User-Agent</div><div class="break-all">${request.user_agent}</div>
-              ${request.tag ? `<div class="text-slate-500">Tag</div><div class="inline-flex items-center gap-1 px-2 py-1 rounded bg-yellow-50 text-yellow-700 border border-yellow-100 font-medium"><i class="fa-solid fa-tag"></i>${request.tag}</div>` : ''}
+              <div class="text-slate-500">Tag</div>
+              <div class="inline-flex items-center gap-1 px-2 py-1 rounded border font-medium ${request.tag ? 'bg-yellow-50 text-yellow-700 border-yellow-100' : 'bg-slate-100 text-slate-600 border-slate-200'}">
+                <i class="fa-solid fa-tag"></i>${(request.tag === null || typeof request.tag === 'undefined' || request.tag === '') ? 'null' : request.tag}
+              </div>
             </div>
           </div>
 

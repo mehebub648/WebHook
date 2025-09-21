@@ -838,20 +838,13 @@ app.get('/request/:id', async (req, res) => {
       }
     });
     
-    // Find selected request
-    let selected = null;
-    if (rid) {
-      selected = requests.find(req => req.rid === rid);
-    } else if (requests.length > 0) {
-      selected = requests[0];
-    }
-    
+    // Don't pre-select any request - let JavaScript handle selection
     res.render('requests', {
       webhookId: id,
       webhook: webhook || null,
       requests,
-      selected,
-      selectedRid: selected ? selected.rid : null
+      selected: null,  // Always null - use JavaScript to load details
+      selectedRid: rid || null  // Pass the requested rid for JavaScript to use
     });
   } catch (error) {
     console.error('Error loading requests:', error);

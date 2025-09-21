@@ -48,16 +48,44 @@
 
     async function loadRequestDetails(webhookId, rid) {
       try {
+        // Show loading state
+        const mainSection = document.querySelector('main section');
+        if (mainSection) {
+          mainSection.innerHTML = `
+            <div class="flex items-center justify-center py-8">
+              <div class="flex items-center gap-2 text-slate-600">
+                <i class="fa-solid fa-spinner fa-spin"></i>
+                Loading request details...
+              </div>
+            </div>
+          `;
+        }
+
         const response = await fetch(`/api/request/${encodeURIComponent(webhookId)}/${encodeURIComponent(rid)}`);
         if (!response.ok) {
-          throw new Error('Failed to load request details');
+          throw new Error(`Failed to load request details: ${response.status}`);
         }
         const data = await response.json();
+        
         updateRequestDetailsView(data);
         currentSelectedRid = rid;
       } catch (error) {
         console.error('Error loading request details:', error);
         showToast('Failed to load request details');
+        
+        // Show error state
+        const mainSection = document.querySelector('main section');
+        if (mainSection) {
+          mainSection.innerHTML = `
+            <div class="border border-red-200 rounded-xl p-4 bg-red-50 text-red-700">
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-exclamation-triangle"></i>
+                Failed to load request details
+              </div>
+              <div class="text-sm mt-1 text-red-600">${error.message}</div>
+            </div>
+          `;
+        }
       }
     }
 
@@ -69,54 +97,96 @@
       const requestTime = request.requestTime;
       const ridSafe = request.ridSafe;
 
-      let forwardResponseSection = '';
-      if (request.forward_response_status || request.forward_response_headers || request.forward_response_body) {
+      // Check if there's any forwarding information
+      const hasForwardUrl = request.parsed_forward_url;
+      const hasForwardResponse = request.forward_response_status || request.forward_response_headers || request.forward_response_body;
+
+      let forwardingCard = '';
+      if (hasForwardUrl) {
         const forwardHeaders = request.prettyForwardHeaders || '{}';
         const forwardBody = request.prettyForwardBody || '';
-        const forwardStatus = request.forward_response_status || 'N/A';
+        const forwardStatus = request.forward_response_status || 'No Response';
         
-        forwardResponseSection = `
-          <div class="mt-6 border-t border-slate-200 pt-6">
-            <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
-              <i class="fa-solid fa-arrow-right text-blue-600"></i>
-              Forward Response Details
-              ${request.background_forward ? 
-                '<span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-orange-100 text-orange-700 text-sm font-medium"><i class="fa-solid fa-clock"></i>Background</span>' : 
-                '<span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-100 text-green-700 text-sm font-medium"><i class="fa-solid fa-sync"></i>Synchronous</span>'}
-            </h3>
-            <div class="grid md:grid-cols-2 gap-3">
-              <!-- Forward Meta -->
-              <div class="border border-slate-200 rounded-xl p-3 bg-blue-50">
+        forwardingCard = `
+          <div class="mt-6">
+            <div class="flex items-start justify-between gap-3">
+              <h2 class="text-xl font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-arrow-right text-blue-600"></i>
+                Forwarding Details
+              </h2>
+              <div class="flex items-center gap-2">
+                ${request.background_forward ? 
+                  '<span class="chip text-xs bg-orange-100 text-orange-700 border-orange-200"><i class="fa-solid fa-clock"></i> Background</span>' : 
+                  '<span class="chip text-xs bg-green-100 text-green-700 border-green-200"><i class="fa-solid fa-sync"></i> Synchronous</span>'}
+                ${hasForwardResponse ? 
+                  `<span class="chip text-xs"><i class="fa-solid fa-signal"></i> ${forwardStatus}</span>` : 
+                  '<span class="chip text-xs bg-gray-100 text-gray-600 border-gray-200"><i class="fa-solid fa-clock"></i> Pending</span>'}
+              </div>
+            </div>
+
+            <div class="mt-3 grid md:grid-cols-2 gap-3">
+              <!-- Forward Configuration -->
+              <div class="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                <h4 class="text-sm font-medium text-slate-700 mb-2">Configuration</h4>
                 <div class="grid grid-cols-[max-content,1fr] gap-x-4 gap-y-2 font-mono text-sm">
-                  <div class="text-slate-500">Status</div><div class="font-semibold text-blue-700">${forwardStatus}</div>
-                  <div class="text-slate-500">Forward URL</div><div class="break-all">${request.parsed_forward_url || 'N/A'}</div>
+                  <div class="text-slate-500">Forward URL</div><div class="break-all text-blue-600">${request.parsed_forward_url}</div>
+                  <div class="text-slate-500">Mode</div>
                   ${request.background_forward ? 
-                    '<div class="text-slate-500">Mode</div><div class="text-orange-600 font-semibold">Background (Fire & Forget)</div><div class="text-slate-500">Info</div><div class="text-orange-600 text-xs">Request was processed in background without blocking the original response</div>' : 
-                    (request.parsed_forward_url ? '<div class="text-slate-500">Mode</div><div class="text-green-600 font-semibold">Synchronous (Wait for Response)</div><div class="text-slate-500">Info</div><div class="text-green-600 text-xs">Original response was the proxied response from the forward URL</div>' : '')}
+                    '<div class="text-orange-600 font-semibold">Background (Fire & Forget)</div>' : 
+                    '<div class="text-green-600 font-semibold">Synchronous (Wait for Response)</div>'}
                   ${request.full_body ? '<div class="text-slate-500">Full Body</div><div class="text-blue-600">Enabled</div>' : ''}
                   ${request.proxy_error ? '<div class="text-slate-500">Error</div><div class="text-red-600 break-all">' + request.proxy_error + '</div>' : ''}
                 </div>
               </div>
 
-              <!-- Forward Response Headers -->
-              <div class="border border-slate-200 rounded-xl p-3 bg-blue-50 codecard">
-                <div class="flex items-center justify-between">
-                  <div class="text-slate-500 text-sm">Response Headers</div>
-                  <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
-                          data-copy-target="fwd-hdr-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
+              <!-- Forward Status -->
+              <div class="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                <h4 class="text-sm font-medium text-slate-700 mb-2">Response Status</h4>
+                <div class="grid grid-cols-[max-content,1fr] gap-x-4 gap-y-2 font-mono text-sm">
+                  <div class="text-slate-500">Status Code</div>
+                  <div class="font-semibold ${hasForwardResponse ? 'text-blue-700' : 'text-gray-600'}">
+                    ${forwardStatus}
+                  </div>
+                  ${request.background_forward ? 
+                    '<div class="text-slate-500">Info</div><div class="text-orange-600 text-xs">Request was processed in background without blocking the original response</div>' : 
+                    (hasForwardResponse ? '<div class="text-slate-500">Info</div><div class="text-green-600 text-xs">Original response was the proxied response from the forward URL</div>' : 
+                    '<div class="text-slate-500">Info</div><div class="text-gray-600 text-xs">Forward request may still be processing or failed</div>')}
                 </div>
-                <pre id="fwd-hdr-${ridSafe}" class="whitespace-pre-wrap break-all font-mono text-sm mt-1">${forwardHeaders}</pre>
               </div>
 
-              <!-- Forward Response Body -->
-              <div class="border border-slate-200 rounded-xl p-3 bg-blue-50 md:col-span-2 codecard">
-                <div class="flex items-center justify-between">
-                  <div class="text-slate-500 text-sm">Response Body</div>
-                  <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
-                          data-copy-target="fwd-body-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
+              ${hasForwardResponse ? `
+                <!-- Forward Response Headers -->
+                <div class="border border-slate-200 rounded-xl p-3 bg-blue-50 codecard">
+                  <div class="flex items-center justify-between">
+                    <h4 class="text-sm font-medium text-slate-700">Response Headers</h4>
+                    <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                            data-copy-target="fwd-hdr-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
+                  </div>
+                  <pre id="fwd-hdr-${ridSafe}" class="whitespace-pre-wrap break-all font-mono text-sm mt-2">${forwardHeaders}</pre>
                 </div>
-                <pre id="fwd-body-${ridSafe}" class="whitespace-pre-wrap break-all font-mono text-sm mt-1">${forwardBody}</pre>
-              </div>
+
+                <!-- Forward Response Body -->
+                <div class="border border-slate-200 rounded-xl p-3 bg-blue-50 md:col-span-2 codecard">
+                  <div class="flex items-center justify-between">
+                    <h4 class="text-sm font-medium text-slate-700">Response Body</h4>
+                    <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                            data-copy-target="fwd-body-${ridSafe}"><i class="fa-regular fa-copy"></i> Copy</button>
+                  </div>
+                  <pre id="fwd-body-${ridSafe}" class="whitespace-pre-wrap break-all font-mono text-sm mt-2">${forwardBody}</pre>
+                </div>
+              ` : `
+                <!-- No Response Data -->
+                <div class="border border-slate-200 rounded-xl p-3 bg-gray-50 md:col-span-2">
+                  <div class="flex items-center gap-2 text-gray-600">
+                    <i class="fa-solid fa-info-circle"></i>
+                    <span class="text-sm">
+                      ${request.background_forward ? 
+                        'Background forward request - response data not captured' : 
+                        'No response data available yet'}
+                    </span>
+                  </div>
+                </div>
+              `}
             </div>
           </div>
         `;
@@ -162,8 +232,7 @@
               <div class="text-slate-500">Response</div><div>${respStatus}</div>
               <div class="text-slate-500">Full URL</div><div class="break-all">${request.full_url}</div>
               <div class="text-slate-500">User-Agent</div><div class="break-all">${request.user_agent}</div>
-              ${forwardUrlSection}
-              ${tagSection}
+              ${request.tag ? `<div class="text-slate-500">Tag</div><div class="inline-flex items-center gap-1 px-2 py-1 rounded bg-yellow-50 text-yellow-700 border border-yellow-100 font-medium"><i class="fa-solid fa-tag"></i>${request.tag}</div>` : ''}
             </div>
           </div>
 
@@ -198,7 +267,7 @@
           </div>
         </div>
 
-        ${forwardResponseSection}
+        ${forwardingCard}
       `;
 
       // Re-attach copy button event listeners
@@ -236,6 +305,19 @@
 
       // Copy buttons for code blocks
       attachCopyEventListeners();
+
+      // Load initial request details if selectedRid is provided
+      const initialRid = currentSelectedRid;
+      if (initialRid) {
+        const webhookId = '<%= webhookId %>';
+        // Find and mark the active request item
+        const activeItem = document.querySelector(`[href*="rid=${encodeURIComponent(initialRid)}"]`);
+        if (activeItem) {
+          activeItem.classList.add('!bg-slate-50');
+        }
+        // Load the request details
+        loadRequestDetails(webhookId, initialRid);
+      }
 
       // Handle request selection clicks
       document.addEventListener('click', function(e) {
@@ -281,7 +363,7 @@
       });
 
       // Ensure active item is visible
-      const active = document.querySelector('[data-req-item].bg-slate-50');
+      const active = document.querySelector('[data-req-item].bg-slate-50, [data-req-item].\\!bg-slate-50');
       if(active){
         active.scrollIntoView({ block:'nearest' });
       }
@@ -402,170 +484,12 @@
 
       <!-- Main -->
       <section class="bg-white border border-slate-200 rounded-2xl p-5 shadow-soft">
-        <% if (!selected) { %>
-          <div class="border border-slate-200 rounded-xl p-4 bg-slate-50 text-slate-600">Select a request from the left to view details.</div>
-        <% } else { %>
-          <%
-            const prettyHeaders = JSON.stringify(selected.headers || {}, null, 2);
-            const prettyQuery = JSON.stringify(selected.query || {}, null, 2);
-            let prettyBody = selected.body || '';
-            try {
-              const decoded = JSON.parse(selected.body);
-              prettyBody = JSON.stringify(decoded, null, 2);
-            } catch (e) { /* leave as-is */ }
-            
-            // Process forward response data if available
-            let prettyForwardHeaders = '';
-            let prettyForwardBody = '';
-            if (selected.forward_response_headers) {
-              prettyForwardHeaders = JSON.stringify(selected.forward_response_headers, null, 2);
-            }
-            if (selected.forward_response_body) {
-              try {
-                const decoded = JSON.parse(selected.forward_response_body);
-                prettyForwardBody = JSON.stringify(decoded, null, 2);
-              } catch (e) {
-                prettyForwardBody = selected.forward_response_body;
-              }
-            }
-            
-            const respStatus = selected.response_status || 200;
-            const requestTime = new Date(selected.time).toISOString();
-            const ridSafe = (selected.rid || 'req').replace(/[^a-zA-Z0-9_-]/g,'');
-          %>
-
-          <div class="flex items-start justify-between gap-3">
-            <h2 class="text-xl font-semibold">Request Details</h2>
-            <div class="flex items-center gap-2">
-              <span class="chip text-xs"><i class="fa-solid fa-signal"></i> <%= respStatus %></span>
-              <span class="chip text-xs font-mono"><%= selected.method %></span>
-            </div>
+        <div class="border border-slate-200 rounded-xl p-4 bg-slate-50 text-slate-600">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-mouse-pointer"></i>
+            Select a request from the left to view details.
           </div>
-
-          <div class="mt-3 grid md:grid-cols-2 gap-3">
-            <!-- Meta -->
-            <div class="border border-slate-200 rounded-xl p-3 bg-slate-50">
-              <div class="grid grid-cols-[max-content,1fr] gap-x-4 gap-y-2 font-mono text-sm">
-                <div class="text-slate-500">Time</div><div class="js-time" data-iso="<%= requestTime %>"><%= requestTime %></div>
-                <div class="text-slate-500">IP</div><div><%= selected.ip || 'N/A' %></div>
-                <div class="text-slate-500">Method</div><div><%= selected.method || 'N/A' %></div>
-                <div class="text-slate-500">Response</div><div><%= respStatus %></div>
-                <div class="text-slate-500">Full URL</div><div class="break-all"><%= selected.full_url || 'N/A' %></div>
-                <div class="text-slate-500">User-Agent</div><div class="break-all"><%= selected.user_agent || 'N/A' %></div>
-                <% if (selected.parsed_forward_url) { %>
-                  <div class="text-slate-500">Forward URL</div><div class="break-all text-blue-600"><%= selected.parsed_forward_url %></div>
-                  <% if (selected.background_forward) { %>
-                    <div class="text-slate-500">Forward Mode</div>
-                    <div class="inline-flex items-center gap-1 px-2 py-1 rounded bg-orange-50 text-orange-700 border border-orange-100 font-medium">
-                      <i class="fa-solid fa-clock"></i>Background
-                    </div>
-                  <% } else { %>
-                    <div class="text-slate-500">Forward Mode</div>
-                    <div class="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-50 text-green-700 border border-green-100 font-medium">
-                      <i class="fa-solid fa-sync"></i>Synchronous
-                    </div>
-                  <% } %>
-                <% } %>
-                <% if (selected.tag) { %>
-                  <div class="text-slate-500">Tag</div>
-                  <div class="inline-flex items-center gap-1 px-2 py-1 rounded bg-yellow-50 text-yellow-700 border border-yellow-100 font-medium">
-                    <i class="fa-solid fa-tag"></i><%= selected.tag %>
-                  </div>
-                <% } %>
-              </div>
-            </div>
-
-            <!-- Headers -->
-            <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 codecard">
-              <div class="flex items-center justify-between">
-                <div class="text-slate-500 text-sm">Headers</div>
-                <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
-                        data-copy-target="hdr-<%= ridSafe %>"><i class="fa-regular fa-copy"></i> Copy</button>
-              </div>
-              <pre id="hdr-<%= ridSafe %>" class="whitespace-pre-wrap break-all font-mono text-sm mt-1"><%= prettyHeaders %></pre>
-            </div>
-
-            <!-- Query -->
-            <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 md:col-span-2 codecard">
-              <div class="flex items-center justify-between">
-                <div class="text-slate-500 text-sm">Query Params</div>
-                <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
-                        data-copy-target="qry-<%= ridSafe %>"><i class="fa-regular fa-copy"></i> Copy</button>
-              </div>
-              <pre id="qry-<%= ridSafe %>" class="whitespace-pre-wrap break-all font-mono text-sm mt-1"><%= prettyQuery %></pre>
-            </div>
-
-            <!-- Body -->
-            <div class="border border-slate-200 rounded-xl p-3 bg-slate-50 md:col-span-2 codecard">
-              <div class="flex items-center justify-between">
-                <div class="text-slate-500 text-sm">Request Body</div>
-                <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
-                        data-copy-target="body-<%= ridSafe %>"><i class="fa-regular fa-copy"></i> Copy</button>
-              </div>
-              <pre id="body-<%= ridSafe %>" class="whitespace-pre-wrap break-all font-mono text-sm mt-1"><%= prettyBody %></pre>
-            </div>
-          </div>
-
-          <% if (selected.forward_response_status || selected.forward_response_headers || selected.forward_response_body) { %>
-            <div class="mt-6 border-t border-slate-200 pt-6">
-              <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
-                <i class="fa-solid fa-arrow-right text-blue-600"></i>
-                Forward Response Details
-                <% if (selected.background_forward) { %>
-                  <span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-orange-100 text-orange-700 text-sm font-medium">
-                    <i class="fa-solid fa-clock"></i>Background
-                  </span>
-                <% } else { %>
-                  <span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-100 text-green-700 text-sm font-medium">
-                    <i class="fa-solid fa-sync"></i>Synchronous
-                  </span>
-                <% } %>
-              </h3>
-              <div class="grid md:grid-cols-2 gap-3">
-                <!-- Forward Meta -->
-                <div class="border border-slate-200 rounded-xl p-3 bg-blue-50">
-                  <div class="grid grid-cols-[max-content,1fr] gap-x-4 gap-y-2 font-mono text-sm">
-                    <div class="text-slate-500">Status</div><div class="font-semibold text-blue-700"><%= selected.forward_response_status || 'N/A' %></div>
-                    <div class="text-slate-500">Forward URL</div><div class="break-all"><%= selected.parsed_forward_url || 'N/A' %></div>
-                    <% if (selected.background_forward) { %>
-                      <div class="text-slate-500">Mode</div><div class="text-orange-600 font-semibold">Background (Fire & Forget)</div>
-                      <div class="text-slate-500">Info</div><div class="text-orange-600 text-xs">Request was processed in background without blocking the original response</div>
-                    <% } else if (selected.parsed_forward_url) { %>
-                      <div class="text-slate-500">Mode</div><div class="text-green-600 font-semibold">Synchronous (Wait for Response)</div>
-                      <div class="text-slate-500">Info</div><div class="text-green-600 text-xs">Original response was the proxied response from the forward URL</div>
-                    <% } %>
-                    <% if (selected.full_body) { %>
-                      <div class="text-slate-500">Full Body</div><div class="text-blue-600">Enabled</div>
-                    <% } %>
-                    <% if (selected.proxy_error) { %>
-                      <div class="text-slate-500">Error</div><div class="text-red-600 break-all"><%= selected.proxy_error %></div>
-                    <% } %>
-                  </div>
-                </div>
-
-                <!-- Forward Response Headers -->
-                <div class="border border-slate-200 rounded-xl p-3 bg-blue-50 codecard">
-                  <div class="flex items-center justify-between">
-                    <div class="text-slate-500 text-sm">Response Headers</div>
-                    <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
-                            data-copy-target="fwd-hdr-<%= ridSafe %>"><i class="fa-regular fa-copy"></i> Copy</button>
-                  </div>
-                  <pre id="fwd-hdr-<%= ridSafe %>" class="whitespace-pre-wrap break-all font-mono text-sm mt-1"><%= prettyForwardHeaders %></pre>
-                </div>
-
-                <!-- Forward Response Body -->
-                <div class="border border-slate-200 rounded-xl p-3 bg-blue-50 md:col-span-2 codecard">
-                  <div class="flex items-center justify-between">
-                    <div class="text-slate-500 text-sm">Response Body</div>
-                    <button class="text-xs text-slate-600 px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
-                            data-copy-target="fwd-body-<%= ridSafe %>"><i class="fa-regular fa-copy"></i> Copy</button>
-                  </div>
-                  <pre id="fwd-body-<%= ridSafe %>" class="whitespace-pre-wrap break-all font-mono text-sm mt-1"><%= prettyForwardBody %></pre>
-                </div>
-              </div>
-            </div>
-          <% } %>
-        <% } %>
+        </div>
       </section>
     </div>
   </main>
